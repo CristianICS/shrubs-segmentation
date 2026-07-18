@@ -1,0 +1,7 @@
+data/
+paper/
+Python/
+R/
+results/
+requirements_versions.txt
+shrub_polys_test.gpkg
