@@ -1,7 +1,0 @@
-geopandas
-rasterio
-numpy
-shapely
-pyproj
-opencv
-gdal

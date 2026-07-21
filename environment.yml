@@ -1,0 +1,11 @@
+name: mrcnn_masks
+channels:
+    - conda-forge
+dependencies:
+    - geopandas
+    - rasterio
+    - numpy
+    - shapely
+    - pyproj
+    - opencv
+    - gdal
