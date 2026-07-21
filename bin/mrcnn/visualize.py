@@ -33,7 +33,7 @@ from mrcnn import utils
 ############################################################
 
 def display_images(images, titles=None, cols=4, cmap=None, norm=None,
-                   interpolation=None):
+                   interpolation=None, figsize=None):
     """Display the given set of images, optionally with titles.
     images: list or array of image tensors in HWC format.
     titles: optional. A list of titles to display with each image.
@@ -44,7 +44,12 @@ def display_images(images, titles=None, cols=4, cmap=None, norm=None,
     """
     titles = titles if titles is not None else [""] * len(images)
     rows = len(images) // cols + 1
-    plt.figure(figsize=(14, 14 * rows // cols))
+
+    if figsize is None:
+        figsize = (14, 14 * rows / cols)
+    
+    plt.figure(figsize=figsize)
+
     i = 1
     for image, title in zip(images, titles):
         plt.subplot(rows, cols, i)
@@ -304,7 +309,7 @@ def draw_box(image, box, color):
     return image
 
 
-def display_top_masks(image, mask, class_ids, class_names, limit=4):
+def display_top_masks(image, mask, class_ids, class_names, limit=4, figsize=None):
     """Display the given image and the top few class masks."""
     to_display = []
     titles = []
@@ -324,7 +329,8 @@ def display_top_masks(image, mask, class_ids, class_names, limit=4):
         m = np.sum(m * np.arange(1, m.shape[-1] + 1), -1)
         to_display.append(m)
         titles.append(class_names[class_id] if class_id != -1 else "-")
-    display_images(to_display, titles=titles, cols=limit + 1, cmap="Blues_r")
+    
+    display_images(to_display, titles=titles, cols=limit + 1, cmap="Blues_r", figsize=figsize)
 
 
 def plot_precision_recall(AP, precisions, recalls):
