@@ -1,6 +1,8 @@
 import os
 import sys
+import math
 import json
+
 import cv2 # type: ignore
 import numpy as np # type: ignore
 
@@ -13,71 +15,101 @@ from mrcnn import utils # type: ignore
 
 # Define the configuration for training Mask R-CNN
 # https://github.com/matterport/Mask_RCNN/blob/master/mrcnn/config.py
-class ShrubConfig(Config):
+class ShrubConfigV2(Config):
     """
-    Configuration for training on the JuniperMapper dataset.
+    Configuration for training on the JuniperMapper dataset mimic Khaldi et al. 2024
+    paper's model configuration.
+
     Derives from the base Config class and overrides values specific
     to the shrub shapes dataset.
     """
     # Give the configuration a recognizable name
-    NAME = "shrubs_cfg"
-    # Train on 1 GPU and 8 images per GPU. We can put multiple images on each
-    # GPU because the images are small. Batch size is 8 (GPUs * images/GPU).
+    NAME = "shrubs_cfg_v2"
+
+    # Batch size = GPU_COUNT * IMAGES_PER_GPU
     GPU_COUNT = 1
-    IMAGES_PER_GPU = 8
+    IMAGES_PER_GPU = 2
 
     NUM_CLASSES = 1 + 1  # background + shrub
 
-    STEPS_PER_EPOCH = 100
-
-    VALIDATION_STEPS = 10
-
-    # Same image size as JuniperMaper PI images
-    IMAGE_RESIZE_MODE = "none"
+    # Preserve original image content and pad dimensions to multiples of 64
+    IMAGE_RESIZE_MODE = "square"
     IMAGE_MIN_DIM = 448
     IMAGE_MAX_DIM = 448
+    IMAGE_MIN_SCALE = 0
+
+    # COCO weights are usually on ResNet101
+    # Available approximation: ResNet101-FPN, not ResNet101-C4
+    BACKBONE = "resnet101"
+    BACKBONE_STRIDES = [4, 8, 16, 32, 64]
+    TOP_DOWN_PYRAMID_SIZE = 256
+
+    # Maximum final detections per image
+    DETECTION_MAX_INSTANCES = 256
+
+    # Freeze batch normalization because the batch size is small
+    TRAIN_BN = False
+
+    # Optimizer
+    # Learning rate and momentum
+    LEARNING_RATE = 0.0025
+    LEARNING_MOMENTUM = 0.9
+    WEIGHT_DECAY = 0.0001
+    GRADIENT_CLIP_NORM = 5.0
+
+    # Match the 4000 maximum number of iterations
+    STEPS_PER_EPOCH = 100
+    TOTAL_EPOCHS = 40
+    # Each artificial epoch processes: 100 batches × 2 images = 200 image samples
+    # Thus, an 'epoch' no longer means one full pass over all the training images.
+    # That is acceptable when the source experiment is defined primarily in terms of
+    # iterations rather than dataset passes.
+
+
+class ShrubConfigV1(Config):
+    """
+    Configuration for training on the JuniperMapper, best results for 
+    current Mask RCNN implementation.
+
+    Derives from the base Config class and overrides values specific
+    to the shrub shapes dataset.
+    """
+    # Give the configuration a recognizable name
+    NAME = "shrubs_cfg_v1"
+
+    # Batch size = GPU_COUNT * IMAGES_PER_GPU
+    GPU_COUNT = 1
+    IMAGES_PER_GPU = 4
+
+    NUM_CLASSES = 1 + 1  # background + shrub
+
+    # Preserve original image content and pad dimensions to multiples of 64
+    IMAGE_RESIZE_MODE = "square"
+    IMAGE_MIN_DIM = 448
+    IMAGE_MAX_DIM = 448
+    IMAGE_MIN_SCALE = 0
 
     # Speed up the process
     # COCO weights are usually on ResNet101
     # Switch to resnet50 cuts compute and memory usage by ~35%.
-    # For transfer learning on a small dataset (like ours), ResNet50 is enough.
-    # BACKBONE = "resnet50"
     BACKBONE = "resnet101"
 
-    # Learning rate and momentum
-    # The Mask RCNN paper uses lr=0.02, but on TensorFlow it causes
-    # weights to explode. Likely due to differences in optimizer
-    # implementation.
-    LEARNING_RATE = 0.001
-    LEARNING_MOMENTUM = 0.9
 
-
-class ShrubValConfig(Config):
+class ShrubInferenceConfig(Config):
     """Configurations for the model in inference mode."""
-        # Give the configuration a recognizable name
-    NAME = "shrubs_cfg"
-    # Reduce the batch size to account for the less number
-    # of images for validation
+    NAME = "shrubs_cfg_inference"
     GPU_COUNT = 1
     IMAGES_PER_GPU = 1
 
     NUM_CLASSES = 1 + 1  # background + shrub
-
-    STEPS_PER_EPOCH = 100
-
-    VALIDATION_STEPS = 10
-
-    # Same image size as JuniperMaper PI images
-    IMAGE_RESIZE_MODE = "none"
+    
+    IMAGE_RESIZE_MODE = "square"
     IMAGE_MIN_DIM = 448
     IMAGE_MAX_DIM = 448
+    IMAGE_MIN_SCALE = 0
 
-    # Learning rate and momentum
-    # The Mask RCNN paper uses lr=0.02, but on TensorFlow it causes
-    # weights to explode. Likely due to differences in optimizer
-    # implementation.
-    LEARNING_RATE = 0.001
-    LEARNING_MOMENTUM = 0.9
+    # Evaluate the full confidence range from zero
+    DETECTION_MIN_CONFIDENCE = 0.0
 
 
 class ShrubMapDataset(utils.Dataset):
