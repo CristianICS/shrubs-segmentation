@@ -3,7 +3,8 @@ from .evaluate import predict_dataset
 from .evaluate import compute_iou_range
 from .evaluate import compute_siou_range
 from .evaluate import plot_performance
-from .utils import ShrubConfig
+from .utils import ShrubConfigV1
+from .utils import ShrubConfigV2
 from .utils import ShrubInferenceConfig
 from .utils import ShrubDataset
 from .training_callbacks import WarmupCosineScheduler
@@ -14,7 +15,8 @@ __all__ = [
     "compute_iou_range",
     "compute_siou_range",
     "plot_performance",
-    "ShrubConfig",
+    "ShrubConfigV1",
+    "ShrubConfigV2",
     "ShrubInferenceConfig",
     "ShrubDataset",
     "WarmupCosineScheduler"
