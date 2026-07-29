@@ -2287,7 +2287,8 @@ class MaskRCNN():
             "*epoch*", "{epoch:04d}")
 
     def train(self, train_dataset, val_dataset, learning_rate, epochs, layers,
-              augmentation=None, custom_callbacks=None, no_augmentation_sources=None):
+              augmentation=None, custom_callbacks=None, no_augmentation_sources=None,
+              validation_freq=1, save_default_checkpoints=True):
         """Train the model.
         train_dataset, val_dataset: Training and validation Dataset objects.
         learning_rate: The learning rate to train with
@@ -2319,6 +2320,9 @@ class MaskRCNN():
         no_augmentation_sources: Optional. List of sources to exclude for
             augmentation. A source is string that identifies a dataset and is
             defined in the Dataset class.
+        validation_freq: Optional. Run validation every `validation_freq` epochs.
+        save_default_checkpoints: Optional. If it set to False, prevent the code
+            from saving a separate checkpoint after every epoch.
         """
         assert self.mode == "training", "Create model in training mode."
 
@@ -2353,13 +2357,23 @@ class MaskRCNN():
             keras.callbacks.TensorBoard(
                 log_dir=self.log_dir,
                 histogram_freq=0,
+                # Changed to prevent a TensorFlow warning
                 write_graph=False,
                 write_images=False,
                 profile_batch=0
-            ),
-            keras.callbacks.ModelCheckpoint(self.checkpoint_path,
-                                            verbose=0, save_weights_only=True),
+            )
         ]
+
+        # The original repository checkpoint saves after every epoch.
+        # Keep it only when explicitly requested.
+        if save_default_checkpoints:
+            callbacks.append(
+                keras.callbacks.ModelCheckpoint(
+                    self.checkpoint_path,
+                    verbose=0,
+                    save_weights_only=True
+                )
+            )
 
         # Add custom callbacks to the list
         if custom_callbacks:
@@ -2387,6 +2401,7 @@ class MaskRCNN():
             callbacks=callbacks,
             validation_data=val_generator,
             validation_steps=self.config.VALIDATION_STEPS,
+            validation_freq=validation_freq,
             max_queue_size=100,
             workers=workers,
             use_multiprocessing=True,

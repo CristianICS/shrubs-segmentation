@@ -1,23 +1,23 @@
 from .evaluate import evaluate_pixel_metrics
-from .evaluate import evaluate_instance_metrics
-from .evaluate import evaluate_instance_metrics_s_iou
+from .evaluate import predict_dataset
 from .evaluate import compute_iou_range
 from .evaluate import compute_siou_range
 from .evaluate import plot_performance
 from .utils import ShrubConfig
-from .utils import ShrubValConfig
+from .utils import ShrubInferenceConfig
 from .utils import ShrubDataset
+from .training_callbacks import WarmupCosineScheduler
 
 __all__ = [
     "evaluate_pixel_metrics",
-    "evaluate_instance_metrics",
-    "evaluate_instance_metrics_s_iou",
+    "predict_dataset",
     "compute_iou_range",
     "compute_siou_range",
     "plot_performance",
     "ShrubConfig",
-    "ShrubValConfig",
-    "ShrubDataset"
+    "ShrubInferenceConfig",
+    "ShrubDataset",
+    "WarmupCosineScheduler"
 ]
 
 __version__ = "1.0.0"
