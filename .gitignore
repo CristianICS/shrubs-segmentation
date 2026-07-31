@@ -1,5 +1,6 @@
 /bin/**/__pycache__/
 /Python/**/__pycache__/
+data/deployment_tiles/
 data/JuniperMapper/
 data/logs/
 Notebooks/*.csv
