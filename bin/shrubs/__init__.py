@@ -7,6 +7,8 @@ from .utils import ShrubConfigV1
 from .utils import ShrubConfigV2
 from .utils import ShrubInferenceConfig
 from .utils import ShrubDataset
+from .utils import ShrubMapDataset
+from .utils import save_masks_as_geojson
 from .training_callbacks import WarmupCosineScheduler
 
 __all__ = [
@@ -19,6 +21,8 @@ __all__ = [
     "ShrubConfigV2",
     "ShrubInferenceConfig",
     "ShrubDataset",
+    "ShrubMapDataset",
+    "save_masks_as_geojson",
     "WarmupCosineScheduler"
 ]
 
