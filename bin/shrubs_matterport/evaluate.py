@@ -15,14 +15,626 @@ threshold.
 """
 from __future__ import annotations
 
+import re
 import csv
+import time
+import shutil
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, Union
 
 from matplotlib import pyplot as plt
 import numpy as np
 
 from mrcnn import utils
+
+
+def write_dict_rows(
+    rows: list[dict],
+    output_path: Union[str, Path],
+) -> None:
+    """Write a list of dictionaries to CSV."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not rows:
+        raise ValueError("Cannot write an empty list of rows.")
+
+    fieldnames = list(rows[0].keys())
+
+    with output_path.open(
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=fieldnames,
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+class Validation:
+
+    def __init__(
+        self,
+        dataset_val,
+        checkpoints_dir,
+        total_epochs_planned
+    ):
+        """Class to produce the metric to assess training step."""
+        self.cached_samples = self.cache_dataset(dataset_val)
+        self.checkpoints_dir = Path(checkpoints_dir)
+
+        # Confirm that all checkpoints were created
+        checkpoint_paths = sorted(
+            self.checkpoints_dir.glob(
+                "mask_rcnn_shrubs_epoch_*.h5"
+            ),
+            key=self.checkpoint_epoch,
+        )
+        saved_epochs = {self.checkpoint_epoch(path) for path in checkpoint_paths}
+        expected_epochs = set(range(1, total_epochs_planned + 1))
+
+        missing_epochs = sorted(expected_epochs - saved_epochs)
+
+        if missing_epochs:
+            raise RuntimeError(
+                f"Missing checkpoint epochs: {missing_epochs}"
+            )
+
+        self.checkpoint_paths = checkpoint_paths
+
+    def cache_dataset(self, dataset_val) -> list[dict]:
+        """
+        Cache the validation data
+
+        Caching prevents images and masks from being repeatedly read from disk for
+        all 40 checkpoints.
+        """
+        cached_samples = []
+
+        for image_id in dataset_val.image_ids:
+            image = dataset_val.load_image(image_id)
+            gt_mask, gt_class_ids = dataset_val.load_mask(image_id)
+
+            gt_mask = gt_mask.astype(bool)
+            gt_class_ids = np.asarray(gt_class_ids, dtype=np.int32)
+            gt_boxes = utils.extract_bboxes(gt_mask)
+
+            image_info = dataset_val.image_info[image_id]
+
+            cached_samples.append(
+                {
+                    "image_id": int(image_id),
+                    "external_id": str(
+                        image_info.get("id", image_id)
+                    ),
+                    "image": image,
+                    "gt_boxes": gt_boxes,
+                    "gt_class_ids": gt_class_ids,
+                    "gt_masks": gt_mask,
+                }
+            )
+
+        return cached_samples
+
+    @staticmethod
+    def checkpoint_epoch(path: Union[str, Path]) -> int:
+        match = re.search(r"epoch_(\d+)\.h5$", Path(path).name)
+
+        if match is None:
+            raise ValueError(
+                f"Could not extract epoch from checkpoint: {path}"
+            )
+
+        return int(match.group(1))
+ 
+    def predict_set(
+        self,
+        inference_model,
+        checkpoint_path: Union[str, Path],
+        verbose: int = 0,
+    ) -> list[dict]:
+        """Run inference for one checkpoint"""
+        inference_model.load_weights(
+            str(checkpoint_path),
+            by_name=True,
+        )
+
+        predictions = []
+
+        for index, sample in enumerate(self.cached_samples, start=1):
+            result = inference_model.detect(
+                [sample["image"]],
+                verbose=0,
+            )[0]
+
+            predictions.append(
+                {
+                    "image_id": sample["image_id"],
+                    "external_id": sample["external_id"],
+                    "rois": result["rois"],
+                    "class_ids": result["class_ids"],
+                    "scores": result["scores"],
+                    "masks": result["masks"].astype(bool),
+                }
+            )
+
+            if verbose and index % 10 == 0:
+                print(
+                    f"Processed {index}/{len(self.cached_samples)} images"
+                )
+
+        return predictions
+
+
+    def compute_image_mask_ap(
+        self,
+        ground_truth: dict,
+        prediction: dict,
+        iou_threshold: float,
+    ) -> float:
+        ap, _, _, _ = utils.compute_ap(
+            ground_truth["gt_boxes"],
+            ground_truth["gt_class_ids"],
+            ground_truth["gt_masks"],
+            prediction["rois"],
+            prediction["class_ids"],
+            prediction["scores"],
+            prediction["masks"],
+            iou_threshold=iou_threshold,
+        )
+
+        return float(ap)
+
+
+    def evaluate_mask_ap(
+        self,
+        predictions: list[dict],
+        iou_thresholds: np.ndarray = np.arange(0.50, 0.96, 0.05),
+    ) -> tuple[dict, list[dict]]:
+        """
+        Compute mAP mean among all the iou thresholds
+
+        This is a Matterport-style mean per-image mask AP, averaged across
+        validation images and IoU thresholds. It is suitable for comparing the
+        checkpoints consistently.
+
+        It is not exactly identical to official COCO dataset-level AP, which
+        accumulates detections across the complete dataset and uses the COCO
+        evaluation implementation.
+        """
+        if len(self.cached_samples) != len(predictions):
+            raise ValueError(
+                "The numbers of ground-truth samples and predictions differ."
+            )
+
+        per_image_rows = []
+
+        for ground_truth, prediction in zip(
+            self.cached_samples,
+            predictions,
+        ):
+            row = {
+                "image_id": ground_truth["image_id"],
+                "external_id": ground_truth["external_id"],
+                "gt_instances": ground_truth[
+                    "gt_masks"
+                ].shape[-1],
+                "predicted_instances": prediction[
+                    "masks"
+                ].shape[-1],
+            }
+
+            image_aps = []
+
+            for threshold in iou_thresholds:
+                ap = self.compute_image_mask_ap(
+                    ground_truth,
+                    prediction,
+                    iou_threshold=float(threshold),
+                )
+
+                column = (
+                    f"AP{int(round(threshold * 100)):02d}"
+                )
+                row[column] = ap
+                image_aps.append(ap)
+
+            row["mAP_50_95"] = float(np.mean(image_aps))
+            per_image_rows.append(row)
+
+        summary = {
+            "mask_AP50": float(
+                np.mean([row["AP50"] for row in per_image_rows])
+            ),
+            "mask_AP75": float(
+                np.mean([row["AP75"] for row in per_image_rows])
+            ),
+            "mask_mAP_50_95": float(
+                np.mean([
+                    row["mAP_50_95"]
+                    for row in per_image_rows
+                ])
+            ),
+            "validation_image_count": len(per_image_rows),
+        }
+
+        for threshold in iou_thresholds:
+            column = f"AP{int(round(threshold * 100)):02d}"
+
+            summary[f"mask_{column}"] = float(
+                np.mean([
+                    row[column]
+                    for row in per_image_rows
+                ])
+            )
+
+        return summary, per_image_rows
+
+    def filter_prediction_by_confidence(
+        self,
+        prediction: dict,
+        confidence_threshold: float,
+    ) -> dict:
+        """
+        Predictions first need to be filtered by the candidate confidence threshold.
+        """
+        keep = prediction["scores"] >= confidence_threshold
+
+        return {
+            "image_id": prediction["image_id"],
+            "external_id": prediction["external_id"],
+            "rois": prediction["rois"][keep],
+            "class_ids": prediction["class_ids"][keep],
+            "scores": prediction["scores"][keep],
+            "masks": prediction["masks"][:, :, keep],
+        }
+
+    def evaluate_confidence_threshold(
+        self,
+        predictions: list[dict],
+        confidence_threshold: float,
+        mask_iou_threshold: float = 0.50,
+    ) -> dict:
+        total_tp = 0
+        total_fp = 0
+        total_fn = 0
+
+        for ground_truth, raw_prediction in zip(
+            self.cached_samples,
+            predictions,
+        ):
+            prediction = self.filter_prediction_by_confidence(
+                raw_prediction,
+                confidence_threshold,
+            )
+
+            gt_match, pred_match, _ = utils.compute_matches(
+                ground_truth["gt_boxes"],
+                ground_truth["gt_class_ids"],
+                ground_truth["gt_masks"],
+                prediction["rois"],
+                prediction["class_ids"],
+                prediction["scores"],
+                prediction["masks"],
+                iou_threshold=mask_iou_threshold,
+                score_threshold=0.0,
+            )
+
+            true_positives = int(np.sum(pred_match > -1))
+            false_positives = int(np.sum(pred_match == -1))
+            false_negatives = int(np.sum(gt_match == -1))
+
+            total_tp += true_positives
+            total_fp += false_positives
+            total_fn += false_negatives
+
+        precision_denominator = total_tp + total_fp
+        recall_denominator = total_tp + total_fn
+
+        precision = (
+            total_tp / precision_denominator
+            if precision_denominator > 0
+            else 0.0
+        )
+
+        recall = (
+            total_tp / recall_denominator
+            if recall_denominator > 0
+            else 0.0
+        )
+
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall > 0
+            else 0.0
+        )
+
+        return {
+            "confidence_threshold": float(confidence_threshold),
+            "mask_iou_threshold": float(mask_iou_threshold),
+            "true_positives": total_tp,
+            "false_positives": total_fp,
+            "false_negatives": total_fn,
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "prediction_count": total_tp + total_fp,
+            "ground_truth_count": total_tp + total_fn,
+        }
+
+    def evaluate_checkpoint_ap(
+        self,
+        inference_model,
+        checkpoint_path: Union[str, Path],
+        output_directory: Union[str, Path],
+    ) -> tuple[dict, list[dict]]:
+        """Evaluate one checkpoint using mask AP only."""
+        checkpoint_path = Path(checkpoint_path)
+        output_directory = Path(output_directory)
+
+        evaluation_start = time.perf_counter()
+        epoch = self.checkpoint_epoch(checkpoint_path)
+
+        # Inference is performed once for this checkpoint.
+        predictions = self.predict_set(
+            inference_model=inference_model,
+            checkpoint_path=checkpoint_path,
+            verbose=0,
+        )
+
+        ap_summary, per_image_ap = self.evaluate_mask_ap(
+            predictions=predictions,
+        )
+
+        write_dict_rows(
+            per_image_ap,
+            output_directory /
+            f"epoch_{epoch:04d}_per_image_mask_ap.csv"
+        )
+
+        checkpoint_summary = {
+            "epoch": epoch,
+            "checkpoint_path": str(checkpoint_path.resolve()),
+            **ap_summary,
+            "evaluation_time_seconds": (
+                time.perf_counter() - evaluation_start
+            ),
+        }
+
+        return checkpoint_summary, predictions
+
+    def select_confidence_threshold(
+        self,
+        predictions: list[dict],
+        confidence_thresholds=None,
+        mask_iou_threshold: float = 0.50,
+    ) -> tuple[dict, list[dict]]:
+        
+        if confidence_thresholds is None:
+            confidence_thresholds = np.arange(0.00, 0.951, 0.05)
+
+        rows = []
+
+        for confidence_threshold in confidence_thresholds:
+            rows.append(
+                self.evaluate_confidence_threshold(
+                    predictions=predictions,
+                    confidence_threshold=float(
+                        confidence_threshold
+                    ),
+                    mask_iou_threshold=mask_iou_threshold,
+                )
+            )
+
+        # Primary criterion: highest F1.
+        #
+        # Tie-break 1: higher recall.
+        # Tie-break 2: higher precision.
+        # Tie-break 3: higher confidence threshold.
+        ranked_rows = sorted(
+            rows,
+            key=lambda row: (
+                row["f1"],
+                row["recall"],
+                row["precision"],
+                row["confidence_threshold"],
+            ),
+            reverse=True,
+        )
+
+        return ranked_rows[0], rows
+
+    def select_best_checkpoint(self, evaluation_dir: Union[str, Path]):
+        """
+        Select the checkpoint with the highest validation mask mAP
+        
+        The tie-breaking rule is:
+
+        - highest mask mAP50:95;
+        - highest mask AP75;
+        - highest mask AP50;
+        - earliest epoch.
+
+        Using the earliest epoch as the final tie-break favours the
+        less-trained model when performance is effectively identical.
+        """
+        ranked_checkpoints = sorted(
+            self.checkpoint_results,
+            key=lambda row: (
+                -row["mask_mAP_50_95"],
+                -row["mask_AP75"],
+                -row["mask_AP50"],
+                row["epoch"],
+            ),
+        )
+
+        self.best_checkpoint_data = ranked_checkpoints[0]
+
+        write_dict_rows(
+            ranked_checkpoints,
+            Path(evaluation_dir) / "checkpoint_ranking.csv",
+        )
+
+        selected_source = Path(
+            self.best_checkpoint_data["checkpoint_path"]
+        )
+
+        self.selected_checkpoint_destination = (
+            Path(evaluation_dir).parent /
+            "best_validation_map_checkpoint.h5"
+        )
+
+        shutil.copy2(
+            selected_source,
+            self.selected_checkpoint_destination,
+        )
+
+        return self.best_checkpoint_data
+
+    def evaluate_all_checkpoints_ap(
+        self,
+        inference_model,
+        checkpoint_evaluation_dir: Union[str, Path],
+    ):
+        """Evaluate every checkpoint using mask AP only."""
+        checkpoint_evaluation_dir = Path(checkpoint_evaluation_dir)
+        checkpoint_evaluation_dir.mkdir(parents=True, exist_ok=True)
+
+        checkpoint_results = []
+
+        for index, checkpoint_path in enumerate(
+            self.checkpoint_paths,
+            start=1,
+        ):
+            print(
+                f"Evaluating checkpoint "
+                f"{index}/{len(self.checkpoint_paths)}: "
+                f"{checkpoint_path.name}"
+            )
+
+            summary, predictions = self.evaluate_checkpoint_ap(
+                inference_model=inference_model,
+                checkpoint_path=checkpoint_path,
+                output_directory=checkpoint_evaluation_dir,
+            )
+
+            checkpoint_results.append(summary)
+
+            # Predictions are no longer needed for this checkpoint.
+            del predictions
+
+            self.checkpoint_results = checkpoint_results
+
+            write_dict_rows(
+                self.checkpoint_results,
+                checkpoint_evaluation_dir.parent /
+                "checkpoint_validation_summary.csv"
+            )
+
+    def evaluate_best_checkpoint_threshold(
+        self,
+        inference_model,
+        output_directory: Union[str, Path],
+        confidence_thresholds=None,
+        mask_iou_threshold: float = 0.50,
+    ):
+        """Run the confidence sweep only for the selected checkpoint."""
+        if not hasattr(self, "best_checkpoint_data"):
+            raise RuntimeError(
+                "Select the best checkpoint before evaluating thresholds."
+            )
+
+        output_directory = Path(output_directory)
+        output_directory.mkdir(parents=True, exist_ok=True)
+
+        checkpoint_path = Path(
+            self.best_checkpoint_data["checkpoint_path"]
+        )
+
+        # Run inference once for the selected checkpoint.
+        predictions = self.predict_set(
+            inference_model=inference_model,
+            checkpoint_path=checkpoint_path,
+            verbose=1,
+        )
+
+        best_threshold, threshold_results = (
+            self.select_confidence_threshold(
+                predictions=predictions,
+                confidence_thresholds=confidence_thresholds,
+                mask_iou_threshold=mask_iou_threshold,
+            )
+        )
+
+        write_dict_rows(
+            threshold_results,
+            output_directory /
+            "best_checkpoint_confidence_thresholds.csv",
+        )
+
+        self.best_threshold_data = best_threshold
+
+        return best_threshold, threshold_results
+
+    def store_final_run(self, run_metadata):
+        run_metadata.status = "evaluation_completed"
+        run_metadata.checkpoint_count = len(self.checkpoint_paths)
+
+        run_metadata.best_checkpoint_epoch = int(
+            self.best_checkpoint_data["epoch"]
+        )
+
+        run_metadata.best_checkpoint_original_path = str(
+            Path(
+                self.best_checkpoint_data["checkpoint_path"]
+            ).resolve()
+        )
+
+        run_metadata.best_checkpoint_path = str(
+            self.selected_checkpoint_destination.resolve()
+        )
+
+        run_metadata.validation_metrics = {
+            "checkpoint_selection_metric": "mean_per_image_mask_mAP_50_95",
+            "mask_mAP_50_95": float(
+                self.best_checkpoint_data["mask_mAP_50_95"]
+            ),
+            "mask_AP50": float(
+                self.best_checkpoint_data["mask_AP50"]
+            ),
+            "mask_AP75": float(
+                self.best_checkpoint_data["mask_AP75"]
+            ),
+            "confidence_selection_metric": (
+                "maximum_validation_F1_at_mask_IoU_0.50"
+            ),
+            "selected_confidence_threshold": float(
+                self.best_threshold_data["confidence_threshold"]
+            ),
+            "precision": float(
+                self.best_threshold_data["precision"]
+            ),
+            "recall": float(
+                self.best_threshold_data["recall"]
+            ),
+            "f1": float(
+                self.best_threshold_data["f1"]
+            ),
+            "true_positives": int(
+                self.best_threshold_data["true_positives"]
+            ),
+            "false_positives": int(
+                self.best_threshold_data["false_positives"]
+            ),
+            "false_negatives": int(
+                self.best_threshold_data["false_negatives"]
+            ),
+        }
+
+        return run_metadata
 
 
 Prediction = Mapping[str, np.ndarray]
@@ -62,9 +674,9 @@ def _validate_instance_arrays(
     class_ids: np.ndarray,
     masks: np.ndarray,
     *,
-    scores: np.ndarray | None = None,
+    scores: Union[np.ndarray, None] = None,
     prefix: str,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, Union[np.ndarray, None]]:
     """Validate arrays describing a collection of object instances."""
     boxes = np.asarray(boxes)
     class_ids = np.asarray(class_ids)
@@ -105,8 +717,8 @@ def _remove_zero_box_instances(
     boxes: np.ndarray,
     class_ids: np.ndarray,
     masks: np.ndarray,
-    scores: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, np.ndarray]:
+    scores: Union[np.ndarray, None] = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, Union[np.ndarray, None], np.ndarray]:
     """Remove zero-padded instances without assuming that padding is trailing."""
     keep = ~np.all(boxes == 0, axis=1)
     filtered_scores = None if scores is None else scores[keep]
@@ -205,7 +817,7 @@ def _get_prediction(
     model,
     image: np.ndarray,
     image_id: Any,
-    predictions: PredictionCache | None,
+    predictions: Union[PredictionCache, None],
 ) -> Prediction:
     """Retrieve a cached prediction or run inference for one image."""
     if predictions is None:
@@ -458,7 +1070,7 @@ def evaluate_pixel_metrics(
     shrub_class_id: int = 1,
     confidence_threshold: float = 0.5,
     *,
-    predictions: PredictionCache | None = None,
+    predictions: Union[PredictionCache, None] = None,
 ):
     """Compute micro-averaged pixel precision, recall, and F1."""
     confidence_threshold = _validate_probability(
@@ -550,7 +1162,7 @@ def evaluate_instance_metrics(
     confidence_threshold: float = 0.5,
     iou_threshold: float = 0.5,
     *,
-    predictions: PredictionCache | None = None,
+    predictions: Union[PredictionCache, None] = None,
 ):
     """Compute one-to-one mask-IoU instance precision, recall, and F1."""
     confidence_threshold = _validate_probability(
@@ -663,7 +1275,7 @@ def evaluate_instance_metrics_s_iou(
     siou_threshold: float = 0.5,
     *,
     minimum_intersection_pixels: int = 1,
-    predictions: PredictionCache | None = None,
+    predictions: Union[PredictionCache, None] = None,
 ):
     """
     Evaluate instance segmentation with directional S-IoU.
@@ -809,7 +1421,7 @@ def evaluate_instance_metrics_s_iou(
 
 
 def _confidence_thresholds(
-    thresholds: Sequence[float] | None,
+    thresholds: Union[Sequence[float], None],
 ) -> list[float]:
     """Validate a confidence-threshold sequence."""
     if thresholds is None:
@@ -832,8 +1444,8 @@ def compute_iou_range(
     shrub_class_id: int = 1,
     verbose: bool = True,
     *,
-    predictions: PredictionCache | None = None,
-    confidence_thresholds: Sequence[float] | None = None,
+    predictions: Union[PredictionCache, None] = None,
+    confidence_thresholds: Union[Sequence[float], None] = None,
 ):
     """Evaluate one-to-one IoU metrics over confidence thresholds."""
     iou_threshold = _validate_probability(
@@ -906,8 +1518,8 @@ def compute_siou_range(
     verbose: bool = True,
     *,
     minimum_intersection_pixels: int = 1,
-    predictions: PredictionCache | None = None,
-    confidence_thresholds: Sequence[float] | None = None,
+    predictions: Union[PredictionCache, None] = None,
+    confidence_thresholds: Union[Sequence[float], None] = None,
 ):
     """Evaluate directional S-IoU metrics over confidence thresholds."""
     siou_threshold = _validate_probability(
