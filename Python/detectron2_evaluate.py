@@ -42,18 +42,14 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import numpy as np
-import torch
 from matplotlib import pyplot as plt
 
-from detectron2 import model_zoo
-from detectron2.checkpoint import DetectionCheckpointer
-from detectron2.config import get_cfg
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.detection_utils import annotations_to_instances, read_image
-from detectron2.modeling import build_model
-from detectron2.data.transforms import ResizeShortestEdge
 
 sys.path.append(str(Path(Path(__file__).absolute().parent.parent, 'bin')))
+from shrubs_detectron import ScaleMatchedPredictor
+from shrubs_detectron import build_inference_cfg
 from shrubs_detectron import inspect_dataset
 from shrubs_detectron import register_juniper_dataset
 
@@ -163,118 +159,6 @@ def register_dataset(spec: DatasetSpec) -> None:
         json_file=spec.json_file,
         image_root=spec.image_root
     )
-
-
-def build_cfg(args: argparse.Namespace):
-    cfg = get_cfg()
-    config_path = Path(args.config)
-    if config_path.is_file():
-        cfg.merge_from_file(str(config_path))
-    else:
-        cfg.merge_from_file(model_zoo.get_config_file(args.config))
-
-    cfg.MODEL.WEIGHTS = str(args.weights)
-    cfg.MODEL.ROI_HEADS.NUM_CLASSES = args.num_classes
-    cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.0
-    cfg.MODEL.DEVICE = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-
-    cfg.TEST.DETECTIONS_PER_IMAGE = 256
-
-    cfg.INPUT.FORMAT = "BGR"
-    cfg.INPUT.MIN_SIZE_TEST = 800
-    cfg.INPUT.MAX_SIZE_TEST = 1333
-
-    cfg.freeze()
-
-    return cfg
-
-
-class ScaleMatchedPredictor:
-    """Run inference using the configured Detectron2 test resizing."""
-
-    def __init__(self, cfg) -> None:
-        self.cfg = cfg.clone()
-        self.model = build_model(self.cfg)
-        self.model.eval()
-
-        DetectionCheckpointer(self.model).load(
-            self.cfg.MODEL.WEIGHTS
-        )
-
-        self.input_format = self.cfg.INPUT.FORMAT
-
-        self.augmentation = ResizeShortestEdge(
-            short_edge_length=[
-                self.cfg.INPUT.MIN_SIZE_TEST,
-                self.cfg.INPUT.MIN_SIZE_TEST,
-            ],
-            max_size=self.cfg.INPUT.MAX_SIZE_TEST,
-        )
-
-    @torch.inference_mode()
-    def __call__(self, image: np.ndarray) -> Prediction:
-        if image.ndim != 3 or image.shape[2] != 3:
-            raise ValueError(
-                f"Expected an HxWx3 image; received {image.shape}."
-            )
-
-        original_height, original_width = image.shape[:2]
-
-        transformed_image = self.augmentation.get_transform(
-            image
-        ).apply_image(image)
-
-        tensor = torch.as_tensor(
-            np.ascontiguousarray(
-                transformed_image.transpose(2, 0, 1)
-            ),
-            dtype=torch.float32,
-        )
-
-        output = self.model(
-            [
-                {
-                    "image": tensor,
-                    "height": original_height,
-                    "width": original_width,
-                }
-            ]
-        )[0]
-
-        instances = output["instances"].to("cpu")
-
-        if instances.has("pred_masks"):
-            masks_nhw = (
-                instances.pred_masks.numpy()
-                .astype(bool, copy=False)
-            )
-        else:
-            masks_nhw = np.zeros(
-                (0, original_height, original_width),
-                dtype=bool,
-            )
-
-        boxes_xyxy = (
-            instances.pred_boxes.tensor.numpy().astype(
-                np.float32,
-                copy=False,
-            )
-            if instances.has("pred_boxes")
-            else np.zeros((0, 4), dtype=np.float32)
-        )
-
-        return {
-            "boxes": boxes_xyxy,
-            "class_ids": (
-                instances.pred_classes.numpy()
-                .astype(np.int64, copy=False)
-            ),
-            "scores": (
-                instances.scores.numpy()
-                .astype(np.float32, copy=False)
-            ),
-            "masks": np.moveaxis(masks_nhw, 0, -1),
-        }
 
 
 def load_ground_truth(record: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -696,7 +580,11 @@ def main() -> None:
     for spec in specs:
         inspect_dataset(spec.name)
 
-    predictor = ScaleMatchedPredictor(build_cfg(args))
+    predictor = ScaleMatchedPredictor(
+        build_inference_cfg(
+            args.weights, config=args.config, num_classes=args.num_classes, device=args.device,
+        )
+    )
     for spec in specs:
         evaluate_dataset(predictor, spec, args)
 
