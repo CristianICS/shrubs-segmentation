@@ -1,27 +1,36 @@
 ## Introduction
 
-Instance segmentation-based approach to shrub delineation. Apply transfer learning using Mask R-CNN models to obtain shrub masks over RGB images.
+Instance segmentation-based approach to shrub delineation. The aim of this repository is perform an study on how transfer learning and Deep Learning models can classify shrubs in a burnt area.
 
-We have used Matterport Mask R-CNN and also the Detectron2 architecture proposed by [Khaldi et al. 2024](https://doi.org/10.1016/j.jag.2024.104191) to make a comparisson.
+Models used:
+
+- Matterport Mask R-CNN with hyperparameter tunning via three steps experiment;
+- Detectron2 Mask R-CNNarchitecture with hyperparamenters proposed by [Khaldi et al. 2024](https://doi.org/10.1016/j.jag.2024.104191)
+- SAM3 model using zero-learning and few-shots classification
 
 ## Data
 
-The example tiles to apply the model were collected over a burnt forest on 17th of July, and the fire occurred in 2003, near Encinacorba (Spain). Imagery have a spatial resolution of 5 centimeters.
+The models have trained with JuniperMapper dataset created by [Khaldi et al. (2023)](https://zenodo.org/records/10058715). The aim of the study is to test if the dataset could be valid to segmentate other type of shrubs in a different environment.
 
-TODO: Check the following sentence. Those weights seem to contain the Khaldi et al. hyperparams reprduced by the Matterport Mask R-CNN architecture. In this case these are deprecated files. Remove these.
-<!-- The `data` folder contains the `logs/mask_rcnn_juniper.h5` file, which includes the weights of the trained model using the dataset created by [Khaldi et al. (2023)](https://zenodo.org/records/10058715). -->
+The area of study is an ancient forest in a hillside burnt in 2003, near Encinacorba (Spain). The available data for trainig is collected with a Zenmuse L1 camera, obtaining both RGB images with a spatial resolution of 5 centimeters and a LiDAR point cloud. A field campaign was carried to collect a small shrub dataset to validate the models.
 
-<!-- The paper's settings cannot be reproduced exactly through configuration alone. Ahmed Gad's repository implements the Matterport ResNet101-FPN architecture, whereas ResNet101-C4 is a different Mask R-CNN backbone/head design. Selecting BACKBONE = "resnet101" does not convert the repository from FPN to C4. The repository defines FPN backbone strides and a 256-channel top-down pyramid explicitly. -->
-
-The data to do transfer learning is downloading from the original [JuniperMapper dataset](https://zenodo.org/records/10058715), and store it inside `data` folder.
+TODO: Explain the custom shrubs validation data [Article: Cross-validation strategies for data with temporal, spatial, hierarchical, or phylogenetic structure].
 
 ## Matterport Mask R-CNN
 
-### Manual installation using conda
+### Usage
 
-First, make sure you have conda installed from any of the official sources ([Download Miniconda](https://docs.conda.io/en/latest/miniconda.html)).
+First, download the current repository.
 
-Go to the project directory:
+```bash
+git clone https://github.com/
+```
+
+The `bin` folder contains the `mrcnn` module from [Ahmed Gad's Mask-RCNN-TF2 repository](https://github.com/ahmedfgad/Mask-RCNN-TF2). It is used to apply the model Mask R-CNN to the dataset.
+
+> The original [Matterport Mask RCNN repo](https://github.com/matterport/Mask_RCNN) is built with TensorFlow 1.15 which is now no longer supported and it has been updated by TensorFlow 2.
+
+With conda installed from any of the official sources ([Dowload Miniconda](https://docs.conda.io/en/latest/miniconda.html)), go to the project directory:
 
 ```bash
 cd /d/shrubs-segmentation
@@ -29,13 +38,13 @@ cd /d/shrubs-segmentation
 
 Install and set up the environment with the correct dependencies. Run the following line:
 
+> Note: Using [mamba](https://github.com/conda-forge/miniforge) will shorten the installation times.
+
 ```bash
 conda create -n mrcnn_tf2 -c conda-forge -y python=3.7
 ```
 
 > Note: Python 3.7 is an stable version used to test the implementation.
-
-> Note: Using [mamba](https://github.com/conda-forge/miniforge) will shorten the installation times.
 
 Then, activate the environment and install the dependencies using `pip`:
 
@@ -52,18 +61,6 @@ conda env create -f environment.yml -y
 
 Inside the last environment, the codes `Python\crop_tiles.py` and `Python\convert_annotations.py` can be executed. The first one splits the main orthomosaic into smaller tiles, and the second one transform the JuniperMapper annotations into a valid format for Matterport's Mask RCNN model.
 
-### Usage
-
-First, download the current repository.
-
-```bash
-git clone https://github.com/
-```
-
-The `bin` folder contains the `mrcnn` module from [Ahmed Gad's Mask-RCNN-TF2 repository](https://github.com/ahmedfgad/Mask-RCNN-TF2). It is used to apply the model Mask R-CNN to the dataset.
-
-> The original [Matterport Mask RCNN repo](https://github.com/matterport/Mask_RCNN) is built with TensorFlow 1.15 which is now no longer supported and it has been updated by TensorFlow 2.
-
 ### Training the model
 
 We trained a Mask RCNN model with the JuniperMapper dataset, using the Photo Interpreted images. The annotations from JuniperMapper must be converted into a valid Mask RCNN format. Use the following code:
@@ -72,9 +69,9 @@ We trained a Mask RCNN model with the JuniperMapper dataset, using the Photo Int
 python convert_annotations.py
 ```
 
-Then, use the `Notebooks/shrubs_train_experiments.ipynb` to trainthe model.
+Then, use the `Notebooks/shrubs_train_experiments.ipynb` to train the model.
 
-TODO: Explain the training experiments to detect the best Matterport's Masked R-CNN configuration to detect shrubs.
+The notebook runs a sequential, three-phase testing design instead of a full hyperparameter grid, which would be costly and more likely to pick a configuration that only looks good by chance. Phase A compares training methods (heads-only vs. staged fine-tuning, with and without geometric augmentation), Phase B tunes the learning rate on top of the winning Phase A setup, and Phase C compares the ResNet-50 backbone against the ResNet-101 baseline using the winning Phase A+B setup. After each phase, every candidate is evaluated on the validation split and `select_best_experiment()` keeps the one with the highest mask mAP (IoU 0.50–0.95). The final winning configuration, its training schedule, augmentation choice, and validation metrics (mask mAP, AP50, AP75, confidence threshold, F1) are saved to `data/logs/matterport/best_model_configuration.json`.
 
 Model was trained using a machine with:
 
@@ -85,16 +82,11 @@ Model was trained using a machine with:
 | Graphic card | NVIDIA GeForce RTX 5070 Ti (16 GB) |
 | OS | Windows 11 x64 |
 
-### Custom `shrub_matterport` package
-
-*Describe the custom classess to handle the data to classify and validate bin/shrubs/utils.py*
-
-
 ## Detectron2 Mask R-CNN
 
-Replicate the model trained in [Khaldi et al. 2024](https://doi.org/10.1016/j.jag.2024.104191) paper.
+The Detectron2 implementation of the Mask R-CNN is the one used in [Khaldi et al. 2024](https://doi.org/10.1016/j.jag.2024.104191) paper.
 
-### Installation
+### Install Detectron2 on Windows
 
 The most reliable method to install it on Windows is to run Detectron2 through WSL2 with Ubuntu, rather than compiling it as a native Windows application.
 
@@ -170,7 +162,6 @@ Get the installation command from the [PyTorch webpage](https://pytorch.org/get-
 - CPU, or the CUDA version appropriate for your system. For NVIDIA graphics cards, check the [NVIDIA CUDA compatibility webpage](https://developer.nvidia.com/cuda/gpus).
     - We've used CUDA 13.0 because we are using an NVIDIA GeForce RTX 5070 Ti (16 GB).
 
-
 In our system:
 
 ```bash
@@ -230,16 +221,16 @@ python -m pip install "setuptools<82"
 
 ### Train the model
 
-In order to reproduce the original paper and get the weights of the model, first the JuniperMapper labels have to be converted. They should have worked as it is, but they don't follo COCO semantics (as Detectron2 requires). Run the `detectron2_convert_annotations.py` file in order to produce valid instances, i.e., one annotation dictionary equals one instance.
+In order to reproduce the original paper and get the weights of the model, first the JuniperMapper labels have to be converted. Run the `detectron2_convert_annotations.py` file in order to produce valid instances, i.e., one annotation dictionary equals one instance.
 
 ```python
 python detectron2_convert_annotations.py ^
-  --images-dir D:/dataset/Test/Images ^
-  --shapefiles-dir D:/dataset/Test/Shapefiles ^
-  --output-json D:/dataset/Test/annotations/Test.json
+  --images-dir ./data/Test/Images ^
+  --shapefiles-dir ./data/Test/Shapefiles ^
+  --output-json D:/data/Test/annotations/Test.json
 ```
 
-Then, the `detectron_convert_annotations.py` code have been used to train the model following the parameters used by Khaldi et al., using the training set to optimize model weights and the validation set to select checkpoint and optionally tune training configuration.
+Then, the `detectron_convert_annotations.py` code have been used to train the model following the parameters used by Khaldi et al. 2024, using the training set to optimize model weights and the validation set to select checkpoint and optionally tune training configuration.
 
 ```python
 python detectron2_shrubs_train.py
@@ -263,6 +254,50 @@ python evaluate_detectron2.py ^
   --output-dir ./project/results/evaluation/model_detectron2
 ```
 
+### Run inference on unlabeled images
+
+To segment a plain set of RGB images with a trained checkpoint, with no COCO ground-truth annotations required, use `detectron2_predict.py`:
+
+```python
+python detectron2_predict.py \
+  --weights model_best.pth \
+  --input data/unlabeled_images \
+  --output results/inference/model_detectron2
+```
+
+For each image it writes a binary shrub mask (`*_shrubs.png`), a per-pixel confidence map (`*_shrub_confidence.png`), and a CSV of instance scores and boxes (`*_shrub_instances.csv`). Adjust `--confidence` to change the score threshold used to keep a prediction (default `0.5`).
+
+## SAM 3
+
+The Segment Anything Model 3 (SAM 3) developed by Meta is used to test its zero-shot accuracy on shrub segmentation, i.e. running the pretrained foundation checkpoint with a text prompt and no shrub-specific fine-tuning.
+
+### Installation
+
+The recommended installation uses conda to create a new environment with the following line:
+
+```bash
+conda env create -f environment_sam3.yml
+```
+
+Inside the new environment, authenticate with Hugging Face before the first run so the gated checkpoint can be downloaded:
+
+```bash
+conda activate sam3_shrubs
+hf auth login
+```
+
+### Run inference
+
+Inference is done with the CLI script `sam3_shrubs.py`, which tiles a GeoTIFF (or every GeoTIFF in a folder), runs SAM 3 with a text prompt on each tile, and stitches the results back into georeferenced outputs:
+
+```bash
+python Python/sam3_shrubs.py data/example.tif \
+  --output results/sam3 --prompt shrub
+```
+
+This writes a binary shrub GeoTIFF, a maximum-confidence GeoTIFF, and a CSV of tile-level instances to `results/sam3`.
+
+Repeat a run with `--prompt "mediterranean shrub"` or `--prompt bush` to compare semantically similar prompts while keeping all other settings fixed. Run `python Python/sam3_shrubs.py --help` for the remaining options (`--confidence`, `--rgb-bands`, `--tile-size`, `--overlap`, `--overwrite`, and `--checkpoint` to point at a local copy of the official release weights instead of downloading them).
 
 ## Funding
 
