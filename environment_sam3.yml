@@ -1,0 +1,29 @@
+name: sam3_shrubs
+
+channels:
+  - conda-forge
+
+dependencies:
+  # Inference plus the upstream training dependencies used by experiments B/C.
+  - python=3.12
+  - numpy>=1.26,<2
+  - rasterio
+  # Imported by sam3.sam.rope but absent from some SAM 3 dependency metadata.
+  - einops
+  # SAM 3 imports the deprecated pkg_resources module.
+  - setuptools<81
+  - pip
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      # Use Pillow's self-contained Windows wheel alongside pip torchvision.
+      - pillow
+      - torch==2.10.0
+      - torchvision
+      # Imported unconditionally through SAM 3's tracker/training type modules.
+      - pycocotools>=2.0.11
+      # Imported unconditionally by SAM 3's video predictor module.
+      - psutil
+      # SAM 3 imports Triton; PyTorch 2.10 requires the Triton 3.6 line.
+      # Official Triton is Linux-only, so use the Windows wheel.
+      - "triton-windows>=3.6,<3.7"
+      - "sam3[train] @ git+https://github.com/facebookresearch/sam3.git"
