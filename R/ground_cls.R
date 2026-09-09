@@ -14,14 +14,14 @@ data_dir <- file.path(root, "data")
 # The original point cloud contains 1/6 of the raw cloud (50 pnts/m2)
 las_ctg <- readLAScatalog(
   file.path(data_dir, "encinacorba_cloud.laz"),
-  filter="xyz"
+  filter = "xyz"
 )
 
 # Retile the original LAS file to allow fit the calculus in one computer
 opt_chunk_buffer(las_ctg) <- 50
 opt_chunk_size(las_ctg) <- 250
 opt_laz_compression(las_ctg) <- TRUE
-plot(las_ctg, chunk_pattern=TRUE)
+plot(las_ctg, chunk_pattern = TRUE)
 
 # Statistical Outlier Removal (SOR)
 # Flags points whose average distance to k nearest neighbors
@@ -46,15 +46,24 @@ opt_output_files(las_ctg) <- file.path(
   outlier_filter_dir, "encinacorba_{XLEFT}_{YTOP}_sor"
 )
 
-# Merge the per-tile outputs into a single LAScatalog so it can be reused
-# directly by the ground classification steps below
-las_ctg <- lidR::catalog_apply(
-  las_ctg,
-  filter_sor_noise,
-  k = 10,
-  m = 3,
-  .options = list(automerge = TRUE)
+# Skip the outlier filter step if the outlier filter folder already
+# contains filtered LAZ tiles, and reuse them instead
+existing_sor_tiles <- list.files(
+  outlier_filter_dir, pattern = "\\.laz$", full.names = TRUE
 )
+if (length(existing_sor_tiles) > 0) {
+  las_ctg <- readLAScatalog(existing_sor_tiles, filter = "xyz")
+} else {
+  # Merge the per-tile outputs into a single LAScatalog so it can be reused
+  # directly by the ground classification steps below
+  las_ctg <- lidR::catalog_apply(
+    las_ctg,
+    filter_sor_noise,
+    k = 10,
+    m = 3,
+    .options = list(automerge = TRUE)
+  )
+}
 gc()
 
 # Re-apply the processing options on the filtered catalog before running
@@ -66,7 +75,7 @@ opt_laz_compression(las_ctg) <- TRUE
 # MCC ground classification
 # The parameters used are the ones found optimal for areas like the studied one
 # by Montealegre et al. 2015: COMPARISON OF OPEN SOURCE LiDAR FILTERING...
-retile_mcc_dir <- file.path(data_dir, "las_mcc_cls_tiles")
+retile_mcc_dir <- file.path(outlier_filter_dir, "las_mcc_cls_tiles")
 if (!dir.exists(retile_mcc_dir)) {
   dir.create(retile_mcc_dir)
 }
@@ -81,7 +90,7 @@ gc()
 
 # Progressive Morphological Filter (PMF) classification method
 # https://r-lidar.github.io/lidRbook/gnd.html#sec-pmf
-retile_pmf_dir <- file.path(data_dir, "las_pmf_cls_tiles")
+retile_pmf_dir <- file.path(outlier_filter_dir, "las_pmf_cls_tiles")
 if (!dir.exists(retile_pmf_dir)) {
   dir.create(retile_pmf_dir)
 }
@@ -98,7 +107,7 @@ gc()
 
 # Progressive TIN Densification (PTD) algorithm
 # https://r-lidar.github.io/lidRbook/gnd.html#sec-ptd
-retile_ptd_dir <- file.path(data_dir, "las_ptd_cls_tiles")
+retile_ptd_dir <- file.path(outlier_filter_dir, "las_ptd_cls_tiles")
 if (!dir.exists(retile_ptd_dir)) {
   dir.create(retile_ptd_dir)
 }
@@ -109,8 +118,7 @@ opt_output_files(las_ctg) <- file.path(
 
 las_ctg_cls <- classify_ground(
   las_ctg,
-  # Recommended parameters for mountainous terrain
-  algorithm = ptd(10, angle = 40, distance = 3)
+  algorithm = ptd(10, angle = 30, distance = 2)
 )
 
 gc()
