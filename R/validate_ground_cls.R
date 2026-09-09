@@ -45,7 +45,7 @@ elev_col <- "height_ortho"
 id_col <- "id"
 
 # Get the average point cloud height within a buffer from each GNSS target
-buffer_size_m <- 0.20
+buffer_size_m <- 0.10
 
 targets_rmse <- function(
   sf_pnts,
