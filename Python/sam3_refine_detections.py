@@ -1,7 +1,7 @@
 """
 Merge SAM 3's per-tile shrub detections across tile boundaries.
 
-`sam3_shrubs.py` writes one `<stem>_shrub_instances.csv` of pixel bounding
+`sam3_deploy.py` writes one `<stem>_shrub_instances.csv` of pixel bounding
 boxes per input GeoTIFF; a shrub that straddles a tile seam can appear as two
 separate rows. This reuses the grouping/union logic already written for the
 Matterport pipeline in `refine_detections.py` (`group_related_detections`,

@@ -441,7 +441,7 @@ python Python/sam3_domain_adapt.py \
   --output data/logs/sam3/domain_adapt --max-epochs 30
 ```
 
-By default it trains on the JuniperMapper Photo Interpretation Train split and validates on its Val split (override with `--train-json`/`--train-images`/`--val-json`/`--val-images`); `--batch-size`, `--num-workers`, `--checkpoint-freq`, and `--device` cover the rest of the common tuning knobs (`python Python/sam3_domain_adapt.py --help` for the full list). Pass `--checkpoint` (the same local release checkpoint file `sam3_shrubs.py`/`sam3_evaluate.py` take) to start training from an already-downloaded checkpoint instead of re-downloading the gated one from Hugging Face. It writes `checkpoint.pt` (latest epoch), periodic `checkpoint_<N>.pt` snapshots, and a `val_shrubs_val_detection_<metric>.pt` snapshot whenever that bbox metric (e.g. AP, AP50) improves, all under `<output>/checkpoints`. None of these is chosen automatically as the model to deploy. That in-loop meter only tracks box AP, not mask quality. So the produced checkpoints were compared using `sam3_evaluate.py`'s instance-IoU/S-IoU metrics:
+By default it trains on the JuniperMapper Photo Interpretation Train split and validates on its Val split (override with `--train-json`/`--train-images`/`--val-json`/`--val-images`); `--batch-size`, `--num-workers`, `--checkpoint-freq`, and `--device` cover the rest of the common tuning knobs (`python Python/sam3_domain_adapt.py --help` for the full list). Pass `--checkpoint` (the same local release checkpoint file `sam3_deploy.py`/`sam3_evaluate.py` take) to start training from an already-downloaded checkpoint instead of re-downloading the gated one from Hugging Face. It writes `checkpoint.pt` (latest epoch), periodic `checkpoint_<N>.pt` snapshots, and a `val_shrubs_val_detection_<metric>.pt` snapshot whenever that bbox metric (e.g. AP, AP50) improves, all under `<output>/checkpoints`. None of these is chosen automatically as the model to deploy. That in-loop meter only tracks box AP, not mask quality. So the produced checkpoints were compared using `sam3_evaluate.py`'s instance-IoU/S-IoU metrics:
 
 ```bash
 python Python/sam3_evaluate.py \
@@ -479,7 +479,7 @@ The model has been run with the following prompts to compare semantically simila
 
 > Note that the output of each prompt is stored inside a folder with their text.
 
-Run `python Python/sam3_shrubs.py --help` for the remaining options (`--confidence`, `--rgb-bands`, `--tile-size`, `--overlap`, `--overwrite`).
+Run `python Python/sam3_deploy.py --help` for the remaining options (`--confidence`, `--rgb-bands`, `--tile-size`, `--overlap`, `--overwrite`).
 
 The code writes a binary shrub GeoTIFF, a maximum-confidence GeoTIFF, and a CSV of tile-level instances.
 
@@ -500,11 +500,13 @@ The three trained models (Detectron2 Mask R-CNN, Matterport Mask R-CNN, SAM 3) h
 | --- | --- | --- |
 | Detectron2 Mask R-CNN | `data/logs/detectron2/model_best.pth` | 0.35 |
 | Matterport Mask R-CNN | The winning config in `best_model_configuration.json` | 0.50 |
-| SAM 3 (domain-adapted) | `results/sam3_domain_adapt/checkpoints/checkpoint_10.pt` | 0.60 |
+| SAM 3 (domain-adapted) | `data/logs/sam3/domain_adapt/checkpoints/checkpoint_10.pt` | 0.60 |
 
 After the deployment phase, each model's shrub map is scored against the manually digitized over the field work plots (`data/encinacorba_annotations.gpkg - square_rois` layer). The `field_work_masks` truth layer contains 79 polygons: 58 shrub masks (`shrub == 1`, mean 3.2 square meters) and 21 tree masks to assess false positives (`shrub == 0`, mean 15.2 square meters). It also contains an `esp_code` species code. It only covers a ~261x278 m plot inside the orthomosaic. It's **exhaustive shrub digitization** within that plot (every shrub inside it was digitized), allowing the computation of the precision/recall metrics.
 
 See [the `results/deployment/README.md`](./results/deployment/README.md) for more information.
+
+## LiDAR refinement
 
 ## Licenses
 

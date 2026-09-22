@@ -10,7 +10,7 @@ DEPLOYMENT_PLAN.md). So for Matterport only, this script does the windowed
 reading up front, in an environment where rasterio works, and writes each
 window as a plain `<stem>_r<row>_c<col>.png` (ordinary RGB pixel data, no
 GDAL needed to read it) plus a `<stem>_r<row>_c<col>.json` sidecar carrying
-that window's affine transform and CRS -- `matterport_predict.py` then reads
+that window's affine transform and CRS -- `matterport_deploy.py` then reads
 these with PIL and the pure-Python `affine` package instead.
 
 Example usage:

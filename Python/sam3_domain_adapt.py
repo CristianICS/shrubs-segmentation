@@ -11,22 +11,22 @@ machinery through the Hydra config in `bin/shrubs_sam3/configs/
 juniper_frozen_backbone.yaml`, the same way SAM 3's own `sam3/train/train.py`
 launcher does for a single local process.
 
-The zero-shot CLI (`sam3_shrubs.py`) and its default behavior are untouched.
+The zero-shot CLI (`sam3_deploy.py`) and its default behavior are untouched.
 Once training finishes, compare checkpoints with the existing evaluation
 harness, since this script does not itself pick a "best" mask model:
 
     python Python/sam3_evaluate.py \\
       --dataset shrubs_val ... \\
-      --checkpoint results/sam3_domain_adapt/checkpoints/checkpoint_10.pt
+      --checkpoint data/logs/sam3/domain_adapt/checkpoints/checkpoint_10.pt
 
 Example usage:
 
     python Python/sam3_domain_adapt.py \\
-      --output results/sam3_domain_adapt --max-epochs 30 \\
+      --output data/logs/sam3/domain_adapt --max-epochs 30 \\
       --checkpoint models/sam3/sam3.pt
 
 `--checkpoint` is optional: it starts training from an already-downloaded
-local release checkpoint (the same file `sam3_shrubs.py --checkpoint` and
+local release checkpoint (the same file `sam3_deploy.py --checkpoint` and
 `sam3_evaluate.py --checkpoint` take) instead of re-downloading the gated
 checkpoint from Hugging Face.
 """
@@ -96,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--checkpoint", type=existing_file, default=None,
         help="Optional local official SAM 3 release checkpoint to start training "
-             "from (same file sam3_shrubs.py's --checkpoint takes). Omit to "
+             "from (same file sam3_deploy.py's --checkpoint takes). Omit to "
              "download the gated release checkpoint from Hugging Face instead.",
     )
     parser.add_argument("--max-epochs", type=int, default=30)

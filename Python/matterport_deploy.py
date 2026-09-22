@@ -26,13 +26,13 @@ Example usage:
 
 python tile_orthomosaic.py \
   --orthomosaic data/rasters/orthomosaic_clip.tif \
-  --output data/rasters/deployment_tiles/matterport_windows \
+  --output data/rasters/deployment_tiles/matterport \
   --tile-size 448 --overlap 64
 # (in mrcnn_masks, or any environment with a working rasterio)
 
-python matterport_predict.py \
-  --tiles data/rasters/deployment_tiles/matterport_windows \
-  --output data/rasters/deployment_tiles/matterport_masks \
+python matterport_deploy.py \
+  --tiles data/rasters/deployment_tiles/matterport \
+  --output results/deployment/tile_masks/matterport \
   --confidence 0.50
 # (in mrcnn_tf2)
 """

@@ -227,8 +227,8 @@ def load_prediction_polygons(
 
     - Embedded (preferred): its `metadata` object carries its own affine
       `transform` (6 coefficients) and `crs`, as written by the internal-
-      tiling deployment scripts (`detectron2_deploy.py`, `matterport_predict.py`,
-      `sam3_shrubs.py`). No paired GeoTIFF is required in that case.
+      tiling deployment scripts (`detectron2_deploy.py`, `matterport_deploy.py`,
+      `sam3_deploy.py`). No paired GeoTIFF is required in that case.
     - Paired GeoTIFF (legacy): when `metadata` has no `transform`, the loader
       falls back to opening `<stem>.tif` in `images_dir` for its transform/CRS,
       matching one pre-cropped tile file per prediction file.

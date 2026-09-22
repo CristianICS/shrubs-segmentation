@@ -6,7 +6,9 @@ Deploy all three trained models (Detectron2 Mask R-CNN, Matterport Mask R-CNN, S
 | --- | --- | --- |
 | Detectron2 Mask R-CNN | `data/logs/detectron2/model_best.pth` | 0.35 |
 | Matterport Mask R-CNN | `data/logs/matterport/phase3_resnet50_seed20260803_20260816T204953/best_validation_map_checkpoint.h5` (the winning config in `best_model_configuration.json`) | 0.50 |
-| SAM 3 (domain-adapted) | `results/sam3_domain_adapt/checkpoints/checkpoint_10.pt` | 0.60 |
+| SAM 3 (domain-adapted) | `data/logs/sam3/domain_adapt/checkpoints/checkpoint_10.pt` | 0.60 |
+
+> Note: `best_model_configuration.json` records `selected_confidence_threshold: 0.85`, the value that maximized validation F1 during training's confidence sweep. Deployment instead uses 0.50 for Matterport, a deliberately looser threshold favoring recall over the training-time F1-optimal point.
 
 ## Data
 
@@ -42,7 +44,7 @@ Per model:
   - Unchanged tiling (1008px / 128px overlap by default)
   - Unchanged raster (`*_shrubs.tif`/`*_shrub_confidence.tif`) plus box CSV outputs
   - One real-polygon `<image_stem>_r<row>_c<col>_masks.json` per window
-- Matterport (`Python/matterport_predict.py`)
+- Matterport (`Python/matterport_deploy.py`)
   - Run `Python/tile_orthomosaic.py` (run in `mrcnn_masks`, has rasterio[^1]) to pre-tile the orthomosaic into plain `<stem>_r<row>_c<col>.png` plus `.json` transform-sidecar pairs;
   - Run `matterport_deploy.py` (run in `mrcnn_tf2`) to read those with PIL and the pure-Python `affine` package.
   - Calls `model.detect()` directly on each window array (matterport's stock inference API takes raw arrays)
@@ -88,7 +90,7 @@ python Python/tile_orthomosaic.py \
   --tile-size 448 --overlap 64
 
 # 2b. Matterport inference — conda env mrcnn_tf2 (rasterio-free)
-python Python/matterport_predict.py \
+python Python/matterport_deploy.py \
   --tiles data/rasters/deployment_tiles/matterport \
   --weights "data/logs/matterport/phase3_resnet50_seed20260803_20260816T204953/best_validation_map_checkpoint.h5" \
   --output results/deployment/tile_masks/matterport \
@@ -96,10 +98,10 @@ python Python/matterport_predict.py \
 
 # 3. SAM 3 — conda env sam3_shrubs, runs on the orthomosaic directly (own tiler)
 # Run the script for every tested prompt
-python Python/sam3_shrubs.py data/rasters/orthomosaic_clip.tif \
+python Python/sam3_deploy.py data/rasters/orthomosaic_clip.tif \
   --output results/deployment/tile_masks/sam3/shrub \
   --prompt shrub --confidence 0.60 \
-  --checkpoint results/sam3_domain_adapt/checkpoints/checkpoint_10.pt \
+  --checkpoint data/logs/sam3/domain_adapt/checkpoints/checkpoint_10.pt \
   --tile-size 1008 --overlap 128
 
 # 4. Merge each model's per-window detections — conda env mrcnn_masks

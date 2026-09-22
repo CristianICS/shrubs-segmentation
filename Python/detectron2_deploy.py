@@ -1,7 +1,7 @@
 """
 Run a trained Detectron2 Mask R-CNN checkpoint directly on a GeoTIFF
 orthomosaic, tiling it internally into (optionally overlapping) windows --
-the same approach `sam3_shrubs.py` already uses -- instead of consuming a
+the same approach `sam3_deploy.py` already uses -- instead of consuming a
 folder of pre-cropped, non-overlapping tile files. Overlap gives a shrub
 sitting on a former tile seam more than one chance to be detected whole,
 which `refine_detections.py`'s cross-window grouping can then reconcile.

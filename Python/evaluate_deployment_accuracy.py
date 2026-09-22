@@ -25,7 +25,7 @@ python evaluate_deployment_accuracy.py \
     results/deployment/model_matterport.geojson \
     results/deployment/model_sam3.geojson \
   --model-names detectron2 matterport sam3 \
-  --ground-truth data/encinacorba_annotations.gpkg --layer field_work \
+  --ground-truth data/encinacorba_annotations.gpkg --layer field_work_masks \
   --output-dir results/evaluation/deployment_accuracy
 """
 from __future__ import annotations
