@@ -1,4 +1,6 @@
 """
+Quick prediction, non-georeferenced sanity checks on loose images
+
 Run a trained Detectron2 Mask R-CNN checkpoint on a plain set of RGB images.
 
 Unlike `detectron2_evaluate.py`, this script requires no COCO ground-truth

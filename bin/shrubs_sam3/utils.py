@@ -6,14 +6,15 @@ import csv
 import os
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable
 
 import numpy as np
 import rasterio
 import torch
 from PIL import Image
-from rasterio.windows import Window
+from rasterio.windows import transform as window_transform
 
+from shrubs_common import greedy_nms, iter_windows, write_window_masks
 
 SUPPORTED_EXTENSIONS = {".tif", ".tiff"}
 
@@ -27,33 +28,6 @@ def parse_rgb_bands(value: str) -> tuple[int, int, int]:
     if len(bands) != 3 or any(band < 1 for band in bands):
         raise ValueError("RGB bands must contain exactly three positive integers.")
     return bands
-
-
-def _starts(length: int, tile_size: int, overlap: int) -> list[int]:
-    if length <= tile_size:
-        return [0]
-    stride = tile_size - overlap
-    starts = list(range(0, length - tile_size + 1, stride))
-    last = length - tile_size
-    if starts[-1] != last:
-        starts.append(last)
-    return starts
-
-
-def iter_windows(width: int, height: int, tile_size: int, overlap: int) -> Iterable[Window]:
-    """Yield full-coverage windows, including image edges."""
-    if tile_size < 1:
-        raise ValueError("Tile size must be positive.")
-    if overlap < 0 or overlap >= tile_size:
-        raise ValueError("Overlap must be at least 0 and smaller than tile size.")
-    for row in _starts(height, tile_size, overlap):
-        for col in _starts(width, tile_size, overlap):
-            yield Window(
-                col,
-                row,
-                min(tile_size, width - col),
-                min(tile_size, height - row),
-            )
 
 
 def _to_rgb_uint8(data: np.ndarray, valid: np.ndarray) -> np.ndarray:
@@ -71,6 +45,17 @@ def _to_rgb_uint8(data: np.ndarray, valid: np.ndarray) -> np.ndarray:
         rgb[index] = np.round(stretched * 255).astype(np.uint8)
     rgb[:, ~valid] = 0
     return np.moveaxis(rgb, 0, -1)
+
+
+def sam3_autocast(device: str):
+    """Return the autocast context SAM 3 inference must run under.
+
+    SAM 3's weights/kernels expect bfloat16 activations on CUDA; without this,
+    a bf16 weight meeting a float32 activation raises a dtype mismatch.
+    """
+    if device == "cuda" and torch.cuda.is_bf16_supported():
+        return torch.autocast("cuda", dtype=torch.bfloat16)
+    return nullcontext()
 
 
 def build_processor(confidence: float, checkpoint: Path | None = None):
@@ -118,6 +103,37 @@ def _tensor_to_numpy(value) -> np.ndarray:
     return np.asarray(value)
 
 
+class TextPromptPredictor:
+    """Adapt a text-prompted `Sam3Processor` to the shared Prediction format
+    (`boxes`/`class_ids`/`scores`/`masks`, masks HxWxN) used by `shrubs_common`,
+    so whole-image SAM 3 inference can reuse the same evaluation code as Detectron2.
+    """
+
+    input_format = "RGB"
+
+    def __init__(self, processor, prompt: str) -> None:
+        self.processor = processor
+        self.prompt = prompt
+
+    def __call__(self, image: np.ndarray) -> dict[str, np.ndarray]:
+        height, width = image.shape[:2]
+        state = self.processor.set_image(Image.fromarray(image))
+        result = self.processor.set_text_prompt(prompt=self.prompt, state=state)
+        masks = _tensor_to_numpy(result["masks"])
+        scores = _tensor_to_numpy(result["scores"]).reshape(-1).astype(np.float32)
+        boxes = _tensor_to_numpy(result["boxes"]).astype(np.float32).reshape(-1, 4)
+        masks = (
+            masks.reshape((-1, height, width)).astype(bool)
+            if masks.size else np.zeros((0, height, width), dtype=bool)
+        )
+        return {
+            "boxes": boxes,
+            "class_ids": np.zeros(len(scores), dtype=np.int64),
+            "scores": scores,
+            "masks": np.moveaxis(masks, 0, -1),
+        }
+
+
 def process_image(
     image_path: Path,
     output_folder: Path,
@@ -126,10 +142,19 @@ def process_image(
     rgb_bands: tuple[int, int, int],
     tile_size: int,
     overlap: int,
+    min_area: int = 0,
+    nms_iou: float = 1.0,
     overwrite: bool = False,
     progress: Callable[[str], None] = print,
 ) -> dict[str, int | Path]:
-    """Segment one raster and write union, confidence, and instance outputs."""
+    """Segment one raster and write union, confidence, and instance outputs.
+
+    `min_area` drops instance masks smaller than that many pixels, and
+    `nms_iou` (a threshold in (0, 1]) suppresses lower-score masks that
+    overlap a kept one by at least that much, within the same tile. Both are
+    no-ops at their defaults, so existing zero-shot output is unchanged unless
+    a caller opts in.
+    """
     mask_path = output_folder / f"{image_path.stem}_shrubs.tif"
     confidence_path = output_folder / f"{image_path.stem}_shrub_confidence.tif"
     csv_path = output_folder / f"{image_path.stem}_shrub_instances.csv"
@@ -195,6 +220,25 @@ def process_image(
                     if masks.size == 0:
                         continue
                     masks = masks.reshape((-1, int(window.height), int(window.width)))
+
+                    keep = masks.reshape(len(masks), -1).sum(axis=1) >= min_area
+                    if nms_iou < 1.0 and keep.any():
+                        keep[keep] &= greedy_nms(np.moveaxis(masks[keep], 0, -1), scores[keep], nms_iou)
+                    masks, scores, boxes = masks[keep], scores[keep], boxes[keep]
+                    if masks.size == 0:
+                        continue
+
+                    # Real per-instance polygons (not the boxes above), so this
+                    # window's shrubs can be merged the same generic way as
+                    # Detectron2/Matterport (see bin/shrubs_common/polygons.py).
+                    write_window_masks(
+                        output_folder / f"{image_path.stem}_r{int(window.row_off)}_c{int(window.col_off)}_masks.json",
+                        np.moveaxis(masks, 0, -1) & valid[..., None],
+                        scores,
+                        np.zeros(len(scores), dtype=np.int64),
+                        window_transform(window, source.transform),
+                        source.crs,
+                    )
 
                     old_mask = mask_dst.read(1, window=window)
                     old_confidence = conf_dst.read(1, window=window)
@@ -263,6 +307,8 @@ def process_input(
     rgb_bands: tuple[int, int, int],
     tile_size: int,
     overlap: int,
+    min_area: int = 0,
+    nms_iou: float = 1.0,
     checkpoint: Path | None = None,
     overwrite: bool = False,
     progress: Callable[[str], None] = print,
@@ -277,18 +323,13 @@ def process_input(
     if device == "cpu":
         progress("Warning: SAM 3 CPU inference is supported but will be very slow.")
 
-    use_bfloat16 = device == "cuda" and torch.cuda.is_bf16_supported()
-    autocast = (
-        torch.autocast("cuda", dtype=torch.bfloat16)
-        if use_bfloat16 else nullcontext()
-    )
     results = []
-    with autocast:
+    with sam3_autocast(device):
         for number, image_path in enumerate(images, start=1):
             progress(f"Image {number}/{len(images)}: {image_path.name}")
             results.append(process_image(
                 image_path, output_folder, processor, prompt, rgb_bands,
-                tile_size, overlap, overwrite, progress,
+                tile_size, overlap, min_area, nms_iou, overwrite, progress,
             ))
     return results
 
@@ -301,6 +342,8 @@ def process_folder(
     rgb_bands: tuple[int, int, int],
     tile_size: int,
     overlap: int,
+    min_area: int = 0,
+    nms_iou: float = 1.0,
     checkpoint: Path | None = None,
     overwrite: bool = False,
     progress: Callable[[str], None] = print,
@@ -316,6 +359,8 @@ def process_folder(
         rgb_bands=rgb_bands,
         tile_size=tile_size,
         overlap=overlap,
+        min_area=min_area,
+        nms_iou=nms_iou,
         checkpoint=checkpoint,
         overwrite=overwrite,
         progress=progress,

@@ -1,0 +1,141 @@
+{
+  "experiment_name": "phase3_resnet50",
+  "configuration": {
+    "BACKBONE": "resnet50",
+    "BACKBONE_STRIDES": [
+      4,
+      8,
+      16,
+      32,
+      64
+    ],
+    "BATCH_SIZE": 4,
+    "BBOX_STD_DEV": [
+      0.1,
+      0.1,
+      0.2,
+      0.2
+    ],
+    "COMPUTE_BACKBONE_SHAPE": null,
+    "DETECTION_MAX_INSTANCES": 100,
+    "DETECTION_MIN_CONFIDENCE": 0.7,
+    "DETECTION_NMS_THRESHOLD": 0.3,
+    "FPN_CLASSIF_FC_LAYERS_SIZE": 1024,
+    "GPU_COUNT": 1,
+    "GRADIENT_CLIP_NORM": 5.0,
+    "IMAGES_PER_GPU": 4,
+    "IMAGE_CHANNEL_COUNT": 3,
+    "IMAGE_MAX_DIM": 448,
+    "IMAGE_META_SIZE": 14,
+    "IMAGE_MIN_DIM": 448,
+    "IMAGE_MIN_SCALE": 0,
+    "IMAGE_RESIZE_MODE": "square",
+    "IMAGE_SHAPE": [
+      448,
+      448,
+      3
+    ],
+    "LEARNING_MOMENTUM": 0.9,
+    "LEARNING_RATE": 0.0025,
+    "LOSS_WEIGHTS": {
+      "rpn_class_loss": 1.0,
+      "rpn_bbox_loss": 1.0,
+      "mrcnn_class_loss": 1.0,
+      "mrcnn_bbox_loss": 1.0,
+      "mrcnn_mask_loss": 1.0
+    },
+    "MASK_POOL_SIZE": 14,
+    "MASK_SHAPE": [
+      28,
+      28
+    ],
+    "MAX_GT_INSTANCES": 100,
+    "MEAN_PIXEL": [
+      123.7,
+      116.8,
+      103.9
+    ],
+    "MINI_MASK_SHAPE": [
+      56,
+      56
+    ],
+    "NAME": "shrubs_baseline",
+    "NUM_CLASSES": 2,
+    "POOL_SIZE": 7,
+    "POST_NMS_ROIS_INFERENCE": 1000,
+    "POST_NMS_ROIS_TRAINING": 2000,
+    "PRE_NMS_LIMIT": 6000,
+    "ROI_POSITIVE_RATIO": 0.33,
+    "RPN_ANCHOR_RATIOS": [
+      0.5,
+      1,
+      2
+    ],
+    "RPN_ANCHOR_SCALES": [
+      32,
+      64,
+      128,
+      256,
+      512
+    ],
+    "RPN_ANCHOR_STRIDE": 1,
+    "RPN_BBOX_STD_DEV": [
+      0.1,
+      0.1,
+      0.2,
+      0.2
+    ],
+    "RPN_NMS_THRESHOLD": 0.7,
+    "RPN_TRAIN_ANCHORS_PER_IMAGE": 256,
+    "STEPS_PER_EPOCH": 143,
+    "TOP_DOWN_PYRAMID_SIZE": 256,
+    "TRAIN_BN": false,
+    "TRAIN_ROIS_PER_IMAGE": 200,
+    "USE_MINI_MASK": true,
+    "USE_RPN_ROIS": true,
+    "VALIDATION_STEPS": 17,
+    "WEIGHT_DECAY": 0.0001
+  },
+  "best_learning_rate": 0.0025,
+  "training_schedule": [
+    {
+      "name": "heads",
+      "layers": "heads",
+      "initial_epoch": 0,
+      "final_epoch": 10,
+      "learning_rate": 0.0025,
+      "epoch_count": 10,
+      "iteration_count": 1430
+    },
+    {
+      "name": "resnet_stage_4_and_above",
+      "layers": "4+",
+      "initial_epoch": 10,
+      "final_epoch": 21,
+      "learning_rate": 0.00125,
+      "epoch_count": 11,
+      "iteration_count": 1573
+    }
+  ],
+  "augmentation": {
+    "name": "none"
+  },
+  "random_seed": 20260803,
+  "dataset_partition": "JunipperMapper_train_val_partition",
+  "best_checkpoint_epoch": 18,
+  "best_checkpoint_path": "C:\\IRANZO\\shrubs-segmentation\\data\\logs\\matterport\\phase3_resnet50_seed20260803_20260816T204953\\best_validation_map_checkpoint.h5",
+  "validation_metrics": {
+    "checkpoint_selection_metric": "mean_per_image_mask_mAP_50_95",
+    "mask_mAP_50_95": 0.6157326873605483,
+    "mask_AP50": 0.8667273691027824,
+    "mask_AP75": 0.7136903095284607,
+    "confidence_selection_metric": "maximum_validation_F1_at_mask_IoU_0.50",
+    "selected_confidence_threshold": 0.8500000000000001,
+    "precision": 0.8531468531468531,
+    "recall": 0.7393939393939394,
+    "f1": 0.7922077922077921,
+    "true_positives": 488,
+    "false_positives": 84,
+    "false_negatives": 172
+  }
+}

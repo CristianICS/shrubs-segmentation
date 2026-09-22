@@ -16,7 +16,7 @@ if (rstudioapi::isAvailable()) {
 }
 
 data_dir <- file.path(root, "data")
-cloud_dir <- file.path(data_dir, "las_outlier_filter_tiles")
+cloud_dir <- file.path(data_dir, "point_cloud", "las_outlier_filter_tiles")
 
 cls_mcc_path <- file.path(cloud_dir, "las_mcc_cls_tiles")
 cls_pmf_path <- file.path(cloud_dir, "las_pmf_cls_tiles")
@@ -153,6 +153,8 @@ cls_ptd_best <- cls_ptd_list[[best_ptd_name[1]]]
 #'
 #' The diagonal extends from the upper-left to the lower-right corner of the
 #' selected tile. Each LAS file is read once and reused for all four transects.
+#' Each transect is shortened to `length_fraction` of the distance between its
+#' two points, keeping it centred on the segment midpoint.
 #'
 #' @param cls_mcc `lidR::LAScatalog` containing the MCC classification.
 #' @param cls_pmf `lidR::LAScatalog` containing the PMF classification.
@@ -161,6 +163,9 @@ cls_ptd_best <- cls_ptd_list[[best_ptd_name[1]]]
 #'   `8`.
 #' @param width Numeric width of each transect, in the coordinate units of the
 #'   LAS data. Defaults to `5`.
+#'
+#' @param length_fraction Numeric in (0, 1] giving the fraction of each
+#'   segment between consecutive points that is kept. Defaults to `0.5`.
 #'
 #' @return A list with `plot` (a `patchwork` object containing twelve transect
 #'   plots arranged in four rows and three columns), `coords` (a data frame
@@ -171,7 +176,8 @@ create_transect_plot <- function(
   cls_pmf,
   cls_ptd,
   tile_number = 8L,
-  width = 2
+  width = 2,
+  length_fraction = 0.5
 ) {
 
   get_five_points <- function(ctg, tile_number) {
@@ -218,7 +224,13 @@ create_transect_plot <- function(
     )
   }
 
+  shrink_segment <- function(points, fraction) {
+    midpoint <- matrix(colMeans(points), nrow = 2L, ncol = 2L, byrow = TRUE)
+    midpoint + (points - midpoint) * fraction
+  }
+
   get_transect <- function(las, points, width) {
+    points <- shrink_segment(points, length_fraction)
     lidR::clip_transect(
       las,
       points[1, ],
@@ -324,9 +336,10 @@ create_transect_plot <- function(
   )
 }
 
-transects <- create_transect_plot(cls_mcc, cls_pmf, cls_ptd_best, width = 1)
+transects <- create_transect_plot(cls_mcc, cls_pmf, cls_ptd_best, width = 0.5)
 
 print(transects$coords)
+print(transects$plot)
 
 ggplot2::ggsave(
   file.path(root, "results", "evaluation", "lidar", "transect_plot.svg"),

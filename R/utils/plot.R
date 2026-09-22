@@ -84,6 +84,19 @@ plotVeg <- function(meta, specs, waves, veg_code, plot_id, average=FALSE) {
 }
 
 
+#' Plot species occupation distribution
+#'
+#' Reshape the plot metadata into a long format, pairing each recorded
+#' species with its occupation percentage (`esp1`/`ocu1` and `esp2`/`ocu2`),
+#' and build two summary plots from it: a boxplot of the occupation
+#' distribution per species with the individual plot observations overlaid
+#' as jittered points, and a histogram of occupation percentages faceted by
+#' species.
+#'
+#' @param metadata_df data.frame with the plots metadata. Must contain the
+#'   columns `id`, `esp1_name`, `esp2_name`, `ocu1` and `ocu2`.
+#' @returns A list with two ggplot objects: the boxplot (`[[1]]`) and the
+#'   histogram (`[[2]]`).
 species_occupation_plot <- function(metadata_df) {
   occu_df <- metadata_df |>
     dplyr::select(id, esp1_name, esp2_name, ocu1, ocu2) |>
@@ -100,8 +113,8 @@ species_occupation_plot <- function(metadata_df) {
       !is.na(species),
       !is.na(occupation)
     )
-  
-  # Boxplot for each species
+
+  # Boxplot for each species, with the real occupation values overlaid
   boxplot_obj <- ggplot2::ggplot(
     occu_df,
     ggplot2::aes(
@@ -109,7 +122,8 @@ species_occupation_plot <- function(metadata_df) {
       y = occupation
     )
   ) +
-    ggplot2::geom_boxplot() +
+    ggplot2::geom_boxplot(outlier.shape = NA) +
+    ggplot2::geom_jitter(width = 0.2, height = 0, alpha = 0.9) +
     ggplot2::coord_flip() +
     ggplot2::labs(
       x = "Species",

@@ -30,4 +30,3 @@ __all__ = [
 
 __version__ = "1.0.0"
 __author__ = "Cristian Iranzo"
-__email__ = "c.iranzo@unizar.es"

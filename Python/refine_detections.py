@@ -11,10 +11,13 @@ Refine detections and confidence scores as a spatial grouping step:
 """
 from pathlib import Path
 from statistics import mean, median
+import argparse
 import json
 
 import geopandas as gpd
 import rasterio
+from affine import Affine
+from rasterio.crs import CRS
 from rasterio.warp import transform_geom
 from shapely.geometry import shape, mapping
 from shapely.ops import unary_union
@@ -22,7 +25,7 @@ from shapely.ops import unary_union
 
 ROOT = Path(__file__).absolute().parent.parent
 
-MASKS_DIR = ROOT / "data" / "deployment_tiles" / "shrub_masks"
+MASKS_DIR = ROOT / "data" / "rasters" / "deployment_tiles" / "matterport_masks"
 OUT_PATH = ROOT / "results" / "predicted_shrub_masks.geojson"
 IMG_EPSG = 25830
 
@@ -144,22 +147,99 @@ class UnionFind:
             self.rank[root_first] += 1
 
 
+def _extract_records(
+    features,
+    prediction_path,
+    image_name,
+    source_crs,
+    affine_transform,
+    merge_crs,
+    pixel_center,
+):
+    """Convert one prediction file's pixel-space features to map-space records."""
+    records = []
+    for feature_index, feature in enumerate(features):
+        pixel_geometry = feature.get("geometry") or {}
+
+        map_geometry = pixel_geometry_to_map_geometry(
+            pixel_geometry,
+            affine_transform,
+            pixel_center=pixel_center
+        )
+
+        if map_geometry is None:
+            continue
+
+        # Put all polygons in the same CRS before grouping.
+        if merge_crs is not None and source_crs != merge_crs:
+            map_geometry = transform_geom(
+                src_crs=source_crs,
+                dst_crs=merge_crs,
+                geom=map_geometry,
+                precision=8,
+            )
+
+        polygon = shape(map_geometry)
+
+        if polygon.is_empty:
+            continue
+
+        # Repair some invalid polygons produced by contours.
+        if not polygon.is_valid:
+            polygon = polygon.buffer(0)
+
+        if polygon.is_empty:
+            continue
+
+        properties = feature.get("properties") or {}
+
+        score = properties.get("score")
+
+        if score is None:
+            continue
+
+        records.append(
+            {
+                "geometry": polygon,
+                "score": float(score),
+                "class_id": properties.get("class_id"),
+                "image_name": image_name,
+                "prediction_file": prediction_path.name,
+                "source_feature": feature_index,
+                "instance_id": properties.get("instance_id"),
+                "polygon_id": properties.get("polygon_id"),
+            }
+        )
+    return records
+
+
 def load_prediction_polygons(
     predictions_dir,
-    images_dir,
-    merge_crs,
+    images_dir=None,
+    merge_crs=None,
     prediction_pattern="_masks.json",
     pixel_center=False,
 ):
     """
     Read all prediction files and convert polygon coordinates to merge_crs.
 
+    Each prediction file can georeference itself two ways:
+
+    - Embedded (preferred): its `metadata` object carries its own affine
+      `transform` (6 coefficients) and `crs`, as written by the internal-
+      tiling deployment scripts (`detectron2_deploy.py`, `matterport_predict.py`,
+      `sam3_shrubs.py`). No paired GeoTIFF is required in that case.
+    - Paired GeoTIFF (legacy): when `metadata` has no `transform`, the loader
+      falls back to opening `<stem>.tif` in `images_dir` for its transform/CRS,
+      matching one pre-cropped tile file per prediction file.
+
     Parameters
     ----------
     predictions_dir : str or Path
-        Directory containing the per-tile prediction JSON files.
-    images_dir : str or Path
-        Directory containing the georeferenced TIFF files.
+        Directory containing the per-tile/per-window prediction JSON files.
+    images_dir : str or Path or None
+        Directory containing the georeferenced TIFF files, used only for
+        prediction files with no embedded transform.
     merge_crs : str
         Projected CRS used for grouping and distance calculations.
         For example, "EPSG:25830".
@@ -190,18 +270,47 @@ def load_prediction_polygons(
             )
             continue
 
+        features = prediction.get("features", [])
+
+        if not features:
+            continue
+
+        metadata = prediction.get("metadata") or {}
+        embedded_transform = metadata.get("transform")
+
+        if embedded_transform is not None:
+            image_name = prediction_path.name.replace(prediction_pattern, "")
+            source_crs = CRS.from_user_input(metadata["crs"])
+            affine_transform = Affine(*embedded_transform[:6])
+
+            if merge_crs is None:
+                if retained_crs is None:
+                    retained_crs = source_crs
+                elif source_crs != retained_crs:
+                    raise ValueError(
+                        "The prediction files use different CRSs. "
+                        "Provide target_crs to reproject them to one CRS."
+                    )
+
+            records.extend(_extract_records(
+                features, prediction_path, image_name,
+                source_crs, affine_transform, merge_crs, pixel_center,
+            ))
+            processed_files += 1
+            continue
+
+        if images_dir is None:
+            print(f"Skipped file with no embedded transform and no images_dir: {prediction_path}")
+            skipped_files += 1
+            continue
+
         image_name = prediction_path.name.replace(prediction_pattern, ".tif")
-        tif_path = images_dir / image_name
+        tif_path = Path(images_dir) / image_name
 
         if not tif_path.exists():
             print(f"Skipped file: {prediction_path}")
             print(f"Invalid reference image: {tif_path}")
             skipped_files += 1
-            continue
-
-        features = prediction.get("features", [])
-
-        if not features:
             continue
 
         with rasterio.open(tif_path) as src:
@@ -222,58 +331,10 @@ def load_prediction_polygons(
                         "Provide target_crs to reproject them to one CRS."
                     )
 
-            for feature_index, feature in enumerate(features):
-                pixel_geometry = feature.get("geometry") or {}
-
-                map_geometry = pixel_geometry_to_map_geometry(
-                    pixel_geometry,
-                    affine_transform,
-                    pixel_center=pixel_center
-                )
-
-                if map_geometry is None:
-                    continue
-
-                # Put all polygons in the same CRS before grouping.
-                if merge_crs is not None and source_crs != merge_crs:
-                    map_geometry = transform_geom(
-                        src_crs=source_crs,
-                        dst_crs=merge_crs,
-                        geom=map_geometry,
-                        precision=8,
-                    )
-
-                polygon = shape(map_geometry)
-
-                if polygon.is_empty:
-                    continue
-
-                # Repair some invalid polygons produced by contours.
-                if not polygon.is_valid:
-                    polygon = polygon.buffer(0)
-
-                if polygon.is_empty:
-                    continue
-
-                properties = feature.get("properties") or {}
-
-                score = properties.get("score")
-
-                if score is None:
-                    continue
-
-                records.append(
-                    {
-                        "geometry": polygon,
-                        "score": float(score),
-                        "class_id": properties.get("class_id"),
-                        "image_name": image_name,
-                        "prediction_file": prediction_path.name,
-                        "source_feature": feature_index,
-                        "instance_id": properties.get("instance_id"),
-                        "polygon_id": properties.get("polygon_id"),
-                    }
-                )
+            records.extend(_extract_records(
+                features, prediction_path, image_name,
+                source_crs, affine_transform, merge_crs, pixel_center,
+            ))
 
         processed_files += 1
 
@@ -487,11 +548,11 @@ def refine_detection_groups(
 
 def merge_and_refine_predictions(
     predictions_dir,
-    images_dir,
     output_path,
     merge_crs,
+    images_dir=None,
     output_crs=None,
-    prediction_pattern="*_masks.json",
+    prediction_pattern="_masks.json",
     merge_distance=0.0,
     minimum_overlap_ratio=0.0,
     merge_same_tile=True,
@@ -580,15 +641,42 @@ def merge_and_refine_predictions(
     return refined
 
 
-merge_and_refine_predictions(
-    predictions_dir=MASKS_DIR,
-    images_dir=MASKS_DIR.parent,
-    output_path=OUT_PATH,
-    merge_crs=IMG_EPSG,
-    output_crs=None,
-    prediction_pattern="_masks.json",
-    merge_distance=5,
-    minimum_overlap_ratio=0.0,
-    merge_same_tile=False,
-    close_gaps=True,
-)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Merge per-tile mask polygons across tile boundaries into georeferenced shrubs."
+    )
+    parser.add_argument(
+        "--predictions", type=Path, default=MASKS_DIR,
+        help=f"Directory with per-tile '*_masks.json' files (default: {MASKS_DIR}).",
+    )
+    parser.add_argument(
+        "--images", type=Path, default=None,
+        help=(
+            "Directory with paired georeferenced tile GeoTIFFs. Only needed for legacy "
+            "prediction files with no embedded 'transform' in their metadata."
+        ),
+    )
+    parser.add_argument("--output", type=Path, default=OUT_PATH, help=f"Output GeoJSON (default: {OUT_PATH}).")
+    parser.add_argument("--crs", default=f"EPSG:{IMG_EPSG}", help="Projected CRS used for merging and output.")
+    parser.add_argument("--prediction-pattern", default="_masks.json")
+    parser.add_argument("--merge-distance", type=float, default=0.05)
+    parser.add_argument("--minimum-overlap-ratio", type=float, default=0.0)
+    parser.add_argument("--merge-same-tile", action="store_true", default=False)
+    parser.add_argument("--close-gaps", action="store_true", default=True)
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    merge_and_refine_predictions(
+        predictions_dir=args.predictions,
+        images_dir=args.images,
+        output_path=args.output,
+        merge_crs=args.crs,
+        output_crs=None,
+        prediction_pattern=args.prediction_pattern,
+        merge_distance=args.merge_distance,
+        minimum_overlap_ratio=args.minimum_overlap_ratio,
+        merge_same_tile=args.merge_same_tile,
+        close_gaps=args.close_gaps,
+    )

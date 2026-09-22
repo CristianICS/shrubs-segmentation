@@ -8,7 +8,7 @@ from rasterio.windows import Window
 # Store the project base directory
 ROOT = Path(__file__).resolve().parent.parent
 
-IMG_PATH = ROOT / "data" / "encinacorba_orto.tif"
+IMG_PATH = ROOT / "data" / "rasters" / "orthomosaic_clip.tif"
 
 
 def tilling(

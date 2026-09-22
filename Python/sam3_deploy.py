@@ -1,4 +1,6 @@
-"""Run zero-shot SAM 3 shrub segmentation on GeoTIFFs."""
+"""
+SAM 3 shrub segmentation on GeoTIFFs.
+"""
 
 from __future__ import annotations
 
@@ -44,7 +46,7 @@ def rgb_bands(value: str) -> tuple[int, int, int]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Zero-shot SAM 3 shrub inference on GeoTIFFs (no fine-tuning)."
+        description="SAM 3 shrub inference on GeoTIFFs."
     )
     parser.add_argument("input", type=existing_path, help="GeoTIFF or folder of GeoTIFFs.")
     parser.add_argument("--output", type=Path, required=True, help="Output directory.")
@@ -56,6 +58,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rgb-bands", type=rgb_bands, default=(1, 2, 3), metavar="R,G,B")
     parser.add_argument("--tile-size", type=int, default=1008)
     parser.add_argument("--overlap", type=int, default=128)
+    parser.add_argument(
+        "--min-area", type=int, default=0,
+        help="Drop instance masks smaller than this many pixels (default: no filtering).",
+    )
+    parser.add_argument(
+        "--nms-iou", type=probability, default=1.0,
+        help="Suppress same-tile masks overlapping a higher-score one by at least this "
+             "IoU (default: 1.0, i.e. no suppression).",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--checkpoint", type=existing_file,
@@ -82,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
         rgb_bands=args.rgb_bands,
         tile_size=args.tile_size,
         overlap=args.overlap,
+        min_area=args.min_area,
+        nms_iou=args.nms_iou,
         checkpoint=args.checkpoint,
         overwrite=args.overwrite,
     )

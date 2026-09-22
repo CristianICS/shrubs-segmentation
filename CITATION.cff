@@ -1,0 +1,104 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below, and cite the JuniperMapper dataset and paper it builds on."
+title: "shrubs-segmentation"
+abstract: >-
+  Instance segmentation-based approach to shrub delineation. It studies how
+  transfer learning and deep learning models (Matterport Mask R-CNN,
+  Detectron2 Mask R-CNN and SAM 3) trained on the JuniperMapper dataset can
+  segment shrubs in a burnt area near Encinacorba (Spain).
+type: software
+authors:
+  - family-names: Iranzo
+    given-names: Cristian
+    email: c.iranzo@unizar.es
+repository-code: "https://github.com/CristianICS/shrubs-segmentation"
+license: MIT
+keywords:
+  - shrub delineation
+  - instance segmentation
+  - Mask R-CNN
+  - Detectron2
+  - SAM 3
+  - LiDAR
+  - remote sensing
+references:
+  - type: dataset
+    title: "JuniperMapper: AI for Shrub Delineation (DATA)"
+    authors:
+      - family-names: Khaldi
+        given-names: Rohaifa
+      - family-names: Puertas-Ruiz
+        given-names: Sergio
+      - family-names: Alcaraz Segura
+        given-names: Domingo
+      - family-names: Zamora
+        given-names: Regino
+      - family-names: Tabik
+        given-names: Siham
+      - family-names: Peñas de Giles
+        given-names: Julio
+      - family-names: Hódar Correa
+        given-names: José Antonio
+    year: 2023
+    doi: "10.5281/zenodo.10058715"
+    url: "https://zenodo.org/records/10058715"
+    license: CC-BY-4.0
+  - type: article
+    title: "Individual mapping of large polymorphic shrubs in high mountains using satellite images and deep learning"
+    authors:
+      - family-names: Khaldi
+        given-names: Rohaifa
+      - family-names: Tabik
+        given-names: Siham
+      - family-names: Puertas-Ruiz
+        given-names: Sergio
+      - family-names: Peñas de Giles
+        given-names: Julio
+      - family-names: Hódar Correa
+        given-names: José Antonio
+      - family-names: Zamora
+        given-names: Regino
+      - family-names: Alcaraz Segura
+        given-names: Domingo
+    journal: "International Journal of Applied Earth Observation and Geoinformation"
+    volume: 134
+    start: 104191
+    year: 2024
+    doi: "10.1016/j.jag.2024.104191"
+  - type: software
+    title: "Mask R-CNN for object detection and instance segmentation on Keras and TensorFlow"
+    authors:
+      - family-names: Abdulla
+        given-names: Waleed
+    year: 2017
+    repository-code: "https://github.com/matterport/Mask_RCNN"
+    license: MIT
+  - type: software
+    title: "Mask-RCNN-TF2"
+    authors:
+      - family-names: Gad
+        given-names: Ahmed Fawzy
+    repository-code: "https://github.com/ahmedfgad/Mask-RCNN-TF2"
+    license: MIT
+  - type: software
+    title: "Detectron2"
+    authors:
+      - family-names: Wu
+        given-names: Yuxin
+      - family-names: Kirillov
+        given-names: Alexander
+      - family-names: Massa
+        given-names: Francisco
+      - family-names: Lo
+        given-names: Wan-Yen
+      - family-names: Girshick
+        given-names: Ross
+    year: 2019
+    repository-code: "https://github.com/facebookresearch/detectron2"
+    license: Apache-2.0
+  - type: software
+    title: "SAM 3: Segment Anything Model 3"
+    authors:
+      - name: "Meta AI Research, FAIR"
+    repository-code: "https://github.com/facebookresearch/sam3"
+    license: "SEE-LICENSE-IN-REPOSITORY"

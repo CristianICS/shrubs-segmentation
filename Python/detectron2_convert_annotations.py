@@ -10,9 +10,9 @@ into a valid COCO instance-segmentation JSON file.
 Example execution:
 
 python shapefiles_to_coco.py ^
-  --images-dir D:/dataset/Test/Images ^
-  --shapefiles-dir D:/dataset/Test/Shapefiles ^
-  --output-json D:/dataset/Test/annotations/Test.json
+  --images-dir ./dataset/Test/Images ^
+  --shapefiles-dir ./dataset/Test/Shapefiles ^
+  --output-json ./dataset/Test/annotations/Test.json
 """
 from __future__ import annotations
 

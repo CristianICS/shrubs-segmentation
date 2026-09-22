@@ -8,22 +8,49 @@ dependencies:
   - python=3.12
   - numpy>=1.26,<2
   - rasterio
+  # Used by sam3_evaluate.py for its F1-versus-confidence plots.
+  - matplotlib
   # Imported by sam3.sam.rope but absent from some SAM 3 dependency metadata.
   - einops
   # SAM 3 imports the deprecated pkg_resources module.
   - setuptools<81
+  # Only actually required on Windows -- torch.distributed there (needed by
+  # sam3_domain_adapt.py's trainer, which always sets up a process group even
+  # for a single local process) requires this to be present; see the torch
+  # 2.11 release notes and https://github.com/pytorch/pytorch/issues/150381.
+  # Harmless to install on Linux/WSL2 too, so it isn't conditioned out.
+  - libuv=1.51
   - pip
   - pip:
       - --extra-index-url https://download.pytorch.org/whl/cu128
       # Use Pillow's self-contained Windows wheel alongside pip torchvision.
       - pillow
-      - torch==2.10.0
+      # torch<2.11 on Windows builds Gloo with USE_LIBUV disabled, which
+      # breaks torch.distributed.init_process_group with
+      # "RuntimeError: makeDeviceForHostname(): unsupported gloo device"
+      # even for a single-process group (needed by sam3_domain_adapt.py).
+      # Fixed upstream in https://github.com/pytorch/gloo/pull/472, first
+      # released in torch 2.11. Kept at 2.11 on Linux too, for one shared
+      # environment file and one known-working version across platforms.
+      - torch==2.11.0
       - torchvision
       # Imported unconditionally through SAM 3's tracker/training type modules.
       - pycocotools>=2.0.11
       # Imported unconditionally by SAM 3's video predictor module.
       - psutil
-      # SAM 3 imports Triton; PyTorch 2.10 requires the Triton 3.6 line.
-      # Official Triton is Linux-only, so use the Windows wheel.
-      - "triton-windows>=3.6,<3.7"
+      # Imported unconditionally by sam3.train.transforms.point_sampling
+      # (used for training's box-noise augmentation), but missing from
+      # sam3[train]'s own declared dependencies -- it's only listed under
+      # sam3's separate "dev"/"notebooks" extras upstream. Pinned below
+      # numpy>=2 (opencv-python 4.12+ requires numpy>=2 on Python 3.9+,
+      # conflicting with sam3's own numpy<2 pin).
+      - opencv-python==4.11.0.86
+      # SAM 3 imports Triton; PyTorch 2.11 still requires the Triton 3.6
+      # line. Official Triton is Linux-only (and is the one actually used
+      # for training under WSL2 -- see "SAM 3 training on WSL2" in
+      # README.md); the Windows wheel is a third-party port used only for
+      # native-Windows zero-shot inference and is not validated for the
+      # torch.compile-heavy paths sam3_domain_adapt.py exercises.
+      - "triton==3.6.0; sys_platform == 'linux'"
+      - "triton-windows>=3.6,<3.7; sys_platform == 'win32'"
       - "sam3[train] @ git+https://github.com/facebookresearch/sam3.git"
