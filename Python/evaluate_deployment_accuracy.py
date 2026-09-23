@@ -15,10 +15,14 @@ one-to-one-matched precision/recall/F1 is valid here:
 - tree_commission_rate: fraction of ground-truth tree polygons matched by a
   prediction -- a diagnostic breakdown of what a chunk of the false positives
   land on, not a separate test.
-- "in the plot" means intersecting the union of the field_work polygons with
-  no buffer (`--plot-buffer 0`), not their overall bounding box.
+- "in the plot" means intersecting the union of the `square_rois` square
+  geometries, with no buffer (`--plot-buffer 0`). This -- not the
+  ground-truth polygons themselves -- is what "in the plot" is measured
+  against, since the survey plots also contain bare ground where a
+  prediction would be a genuine false positive despite not touching any
+  digitized polygon.
 
-Example usage:
+Example usage (explicit files and names):
 
 python evaluate_deployment_accuracy.py \
   --predictions results/deployment/model_detectron2.geojson \
@@ -26,6 +30,18 @@ python evaluate_deployment_accuracy.py \
     results/deployment/model_sam3.geojson \
   --model-names detectron2 matterport sam3 \
   --ground-truth data/encinacorba_annotations.gpkg --layer field_work_masks \
+  --rois-layer square_rois \
+  --output-dir results/evaluation/deployment_accuracy
+
+Or, point --predictions at a folder instead to auto-discover every
+'<prompt>_map_<model>.geojson' file in it (e.g. results/deployment) and infer
+model names and, for SAM 3, the text prompt used, without listing files or
+--model-names by hand:
+
+python evaluate_deployment_accuracy.py \
+  --predictions results/deployment \
+  --ground-truth data/encinacorba_annotations.gpkg --layer field_work_masks \
+  --rois-layer square_rois \
   --output-dir results/evaluation/deployment_accuracy
 """
 from __future__ import annotations
@@ -38,28 +54,99 @@ from statistics import mean
 import geopandas as gpd
 from shapely.geometry.base import BaseGeometry
 
+PREDICTIONS_FILENAME_SEP = "_map_"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Score deployed shrub predictions against manually digitized field_work polygons."
     )
-    parser.add_argument("--predictions", type=Path, nargs="+", required=True, help="One refined GeoJSON per model.")
-    parser.add_argument("--model-names", nargs="+", required=True, help="Name for each --predictions entry, same order.")
-    parser.add_argument("--ground-truth", type=Path, required=True, help="GeoPackage with the field_work layer.")
-    parser.add_argument("--layer", default="field_work")
+    parser.add_argument(
+        "--predictions", type=Path, nargs="+", required=True,
+        help=(
+            "Either one refined GeoJSON per model (paired with --model-names), or a single folder "
+            "containing '<prompt>_map_<model>.geojson' files to auto-discover models and names from."
+        ),
+    )
+    parser.add_argument(
+        "--model-names", nargs="+",
+        help="Name for each --predictions entry, same order. Omit when --predictions is a folder.",
+    )
+    parser.add_argument("--ground-truth", type=Path, required=True, help="GeoPackage with the field_work and square_rois layers.")
+    parser.add_argument("--layer", default="field_work_masks", help="Ground-truth shrub/tree polygon layer.")
+    parser.add_argument(
+        "--rois-layer", default="square_rois",
+        help="Layer of survey-plot squares that defines what counts as 'in the plot' (default: %(default)s).",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
         "--plot-buffer", type=float, default=0.0,
-        help="Metres to buffer the field_work polygons by when clipping predictions (default: %(default)s, i.e. no buffer).",
+        help="Metres to buffer the square_rois geometries by when clipping predictions (default: %(default)s, i.e. no buffer).",
     )
     parser.add_argument(
         "--iou-threshold", type=float, default=0.1,
         help="Minimum IoU between a ground-truth polygon and its best-overlapping prediction to count as a match.",
     )
     args = parser.parse_args()
-    if len(args.predictions) != len(args.model_names):
-        parser.error("--predictions and --model-names must have the same length.")
+
+    args.predictions_dir = args.predictions[0] if len(args.predictions) == 1 and args.predictions[0].is_dir() else None
+    if args.predictions_dir is not None:
+        if args.model_names:
+            parser.error("--model-names cannot be combined with a --predictions folder; names are inferred automatically.")
+    else:
+        if not args.model_names:
+            parser.error("--model-names is required when --predictions lists individual files.")
+        if len(args.predictions) != len(args.model_names):
+            parser.error("--predictions and --model-names must have the same length.")
     return args
+
+
+def model_label(run_name: str) -> str:
+    """The base model type ('sam3', 'detectron2', 'matterport', ...) a run belongs to."""
+    return "sam3" if run_name == "sam3" or run_name.startswith("sam3_") else run_name
+
+
+def discover_predictions(directory: Path) -> tuple[list[Path], list[str], dict[str, str]]:
+    """
+    Auto-discover '<prompt>_map_<model>.geojson' files in `directory` (e.g.
+    results/deployment). Returns predictions paths, their inferred *run*
+    names, and a {run_name: prompt_text} map for the SAM 3 entries (whose
+    filenames encode the text prompt used, e.g. 'brown_shrub_map_sam3.geojson'
+    -> run name 'sam3_brown_shrub', prompt 'brown shrub'). Non-SAM-3 models
+    (detectron2, matterport, ...) aren't prompted, so their run name is just
+    the model name. A run name is a unique, file-safe identifier (used for
+    each run's '<run_name>_matches.csv'); model_label() reduces it back to
+    the base model type for reporting.
+    """
+    predictions_paths: list[Path] = []
+    run_names: list[str] = []
+    sam3_prompts: dict[str, str] = {}
+    seen_names: set[str] = set()
+
+    for path in sorted(directory.glob("*.geojson")):
+        stem = path.stem
+        if PREDICTIONS_FILENAME_SEP not in stem:
+            print(f"Skipping {path.name}: doesn't match '<prompt>_map_<model>.geojson'.")
+            continue
+        prompt_slug, model = stem.rsplit(PREDICTIONS_FILENAME_SEP, 1)
+        if model == "sam3":
+            run_name = f"sam3_{prompt_slug}"
+            sam3_prompts[run_name] = prompt_slug.replace("_", " ")
+        else:
+            run_name = model
+
+        if run_name in seen_names:
+            raise SystemExit(
+                f"Duplicate inferred run name '{run_name}' from {path.name}; "
+                "rename the files or fall back to --predictions/--model-names."
+            )
+        seen_names.add(run_name)
+        predictions_paths.append(path)
+        run_names.append(run_name)
+
+    if not predictions_paths:
+        raise SystemExit(f"No '<prompt>_map_<model>.geojson' files found in {directory}.")
+    return predictions_paths, run_names, sam3_prompts
 
 
 def iou(a: BaseGeometry, b: BaseGeometry) -> float:
@@ -113,13 +200,15 @@ def match_ground_truth(
 
 
 def evaluate_model(
-    model_name: str,
+    run_name: str,
+    model: str,
     predictions_path: Path,
     gt_shrub: gpd.GeoDataFrame,
     gt_tree: gpd.GeoDataFrame,
     plot_geometry: BaseGeometry,
     iou_threshold: float,
     output_dir: Path,
+    sam3_prompt: str | None = None,
 ) -> dict:
     predictions = gpd.read_file(predictions_path).to_crs(gt_shrub.crs)
     predictions = predictions[predictions.intersects(plot_geometry)].reset_index(drop=True)
@@ -145,17 +234,27 @@ def evaluate_model(
         else None
     )
 
-    detail_path = output_dir / f"{model_name}_matches.csv"
+    detail_fieldnames = ["gt_id", "esp_code", "class", "matched", "best_iou"]
+    if sam3_prompt is not None:
+        detail_fieldnames.append("sam3_prompt")
+    detail_path = output_dir / f"{run_name}_matches.csv"
     with detail_path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=["gt_id", "esp_code", "class", "matched", "best_iou"])
+        writer = csv.DictWriter(file, fieldnames=detail_fieldnames)
         writer.writeheader()
         for record in shrub_records:
-            writer.writerow({**record, "class": "shrub"})
+            row = {**record, "class": "shrub"}
+            if sam3_prompt is not None:
+                row["sam3_prompt"] = sam3_prompt
+            writer.writerow(row)
         for record in tree_records:
-            writer.writerow({**record, "class": "tree"})
+            row = {**record, "class": "tree"}
+            if sam3_prompt is not None:
+                row["sam3_prompt"] = sam3_prompt
+            writer.writerow(row)
 
     return {
-        "model": model_name,
+        "model": model,
+        "sam3_prompt": sam3_prompt,
         "n_gt_shrub": len(gt_shrub),
         "n_matched_shrub": n_matched_shrub,
         "n_predictions_in_plot": len(predictions),
@@ -180,13 +279,20 @@ def main() -> None:
     gt_shrub = gt[gt["shrub"] == 1].reset_index(drop=True)
     gt_tree = gt[gt["shrub"] == 0].reset_index(drop=True)
 
-    plot_geometry = gt.geometry.union_all().buffer(args.plot_buffer)
+    rois = gpd.read_file(args.ground_truth, layer=args.rois_layer).to_crs(gt.crs)
+    plot_geometry = rois.geometry.union_all().buffer(args.plot_buffer)
+
+    if args.predictions_dir is not None:
+        predictions_paths, run_names, sam3_prompts = discover_predictions(args.predictions_dir)
+    else:
+        predictions_paths, run_names, sam3_prompts = args.predictions, args.model_names, {}
 
     summary = []
-    for model_name, predictions_path in zip(args.model_names, args.predictions):
-        print(f"Evaluating {model_name}: {predictions_path}")
+    for run_name, predictions_path in zip(run_names, predictions_paths):
+        print(f"Evaluating {run_name}: {predictions_path}")
         summary.append(evaluate_model(
-            model_name, predictions_path, gt_shrub, gt_tree, plot_geometry, args.iou_threshold, args.output_dir,
+            run_name, model_label(run_name), predictions_path, gt_shrub, gt_tree, plot_geometry,
+            args.iou_threshold, args.output_dir, sam3_prompt=sam3_prompts.get(run_name),
         ))
 
     summary_path = args.output_dir / "summary.csv"

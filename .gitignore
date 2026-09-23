@@ -11,7 +11,6 @@ data/encinacorba_fire.zip
 Notebooks/*.csv
 Notebooks/*.png
 paper/
-plans/
 /Python/**/__pycache__/
 R/.Rhistory
 R/.Rproj.user
