@@ -23,6 +23,8 @@ results/evaluation/lidar/**
 !results/evaluation/lidar/comparative_stats.csv
 results/lidar_refined/**
 !results/lidar_refined/README.md
+!results/lidar_refined/annotations_stats.csv
+!results/lidar_refined/summary.csv
 results/evaluation/model_detectron2
 results/evaluation/model_matterport
 results/evaluation/model_sam3

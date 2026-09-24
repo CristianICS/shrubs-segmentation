@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import os
 import sys
 import json
@@ -53,7 +53,15 @@ class BestModelShrubInferenceConfig(Config):
         "RPN_BBOX_STD_DEV",
     }
 
-    def __init__(self, metadata_path):
+    def __init__(self, metadata_path, weights_path=None):
+        """
+        Parameters
+        ----------
+        metadata_path : str or Path
+            `best_model_configuration.json` written by the training notebook.
+        weights_path : str or Path or None
+            Checkpoint to load instead of the one stored in the metadata.
+        """
         with open(metadata_path, "r", encoding="utf-8") as metadata_file:
             metadata = json.load(metadata_file)
 
@@ -77,21 +85,54 @@ class BestModelShrubInferenceConfig(Config):
         self.IMAGES_PER_GPU = 1
         self.DETECTION_MIN_CONFIDENCE = 0.0
 
-        try:
-            weights_path = Path(metadata["best_checkpoint_path"])
-        except KeyError as error:
-            raise ValueError(
-                "The model metadata must contain 'best_checkpoint_path'."
-            ) from error
+        if weights_path is not None:
+            weights_path = Path(weights_path)
+        else:
+            try:
+                stored_path = metadata["best_checkpoint_path"]
+            except KeyError as error:
+                raise ValueError(
+                    "The model metadata must contain 'best_checkpoint_path'."
+                ) from error
+            weights_path = resolve_checkpoint_path(stored_path, metadata_path)
 
         if not weights_path.is_file():
             raise FileNotFoundError(
-                f"Best-model weights were not found: {weights_path}"
+                f"Best-model weights were not found: {weights_path}. "
+                "Pass the checkpoint path explicitly to override the one "
+                f"stored in {metadata_path}."
             )
 
         self.best_model_path = str(weights_path)
 
         super().__init__()
+
+
+def resolve_checkpoint_path(stored_path, metadata_path):
+    """
+    Locate the checkpoint recorded in the best-model metadata.
+
+    A relative path is resolved against the metadata file's folder, so the
+    repository can be moved or cloned elsewhere. An absolute path that no
+    longer exists (e.g. written on another machine) falls back to
+    `<metadata folder>/<run folder>/<checkpoint file>`, which is where the
+    training notebook stores every run.
+    """
+    metadata_dir = Path(metadata_path).resolve().parent
+    # Parse Windows-style paths explicitly so they also split correctly on
+    # Linux/WSL, where backslashes are not path separators.
+    if "\\" in stored_path:
+        stored = PureWindowsPath(stored_path)
+    else:
+        stored = PurePosixPath(stored_path)
+
+    if not stored.is_absolute():
+        return metadata_dir.joinpath(*stored.parts)
+
+    if Path(stored_path).is_file():
+        return Path(stored_path)
+
+    return metadata_dir / stored.parent.name / stored.name
 
 
 class ShrubMapDataset(utils.Dataset):

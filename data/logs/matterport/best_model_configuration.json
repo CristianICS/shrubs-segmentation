@@ -123,7 +123,7 @@
   "random_seed": 20260803,
   "dataset_partition": "JunipperMapper_train_val_partition",
   "best_checkpoint_epoch": 18,
-  "best_checkpoint_path": "C:\\IRANZO\\shrubs-segmentation\\data\\logs\\matterport\\phase3_resnet50_seed20260803_20260816T204953\\best_validation_map_checkpoint.h5",
+  "best_checkpoint_path": "phase3_resnet50_seed20260803_20260816T204953/best_validation_map_checkpoint.h5",
   "validation_metrics": {
     "checkpoint_selection_metric": "mean_per_image_mask_mAP_50_95",
     "mask_mAP_50_95": 0.6157326873605483,

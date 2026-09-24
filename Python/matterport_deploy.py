@@ -71,7 +71,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--weights", type=Path, default=None,
-        help="Override the checkpoint path stored in --metadata (use when the logged path has moved).",
+        help=(
+            "Override the checkpoint path stored in --metadata. By default that path is "
+            "resolved relative to the metadata file's folder."
+        ),
     )
     parser.add_argument("--output", type=Path, required=True, help="Output directory for '*_masks.json'.")
     parser.add_argument("--confidence", type=float, default=0.5, help="Score threshold to keep a prediction.")
@@ -97,13 +100,9 @@ def find_windows(tiles_dir: Path) -> list[Path]:
 def main() -> None:
     args = parse_args()
 
-    config = BestModelShrubInferenceConfig(str(args.metadata))
-    weights_path = args.weights or Path(config.best_model_path)
-    if not weights_path.is_file():
-        raise FileNotFoundError(
-            f"Matterport checkpoint not found: {weights_path}. Pass --weights to override the "
-            f"path stored in {args.metadata}."
-        )
+    # Raises FileNotFoundError, suggesting --weights, if the checkpoint is missing.
+    config = BestModelShrubInferenceConfig(args.metadata, weights_path=args.weights)
+    weights_path = Path(config.best_model_path)
 
     windows = find_windows(args.tiles)
     args.output.mkdir(parents=True, exist_ok=True)

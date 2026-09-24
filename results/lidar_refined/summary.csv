@@ -1,0 +1,4 @@
+model,sam3_prompt,n_gt_shrub,n_matched_shrub,n_predictions_in_plot,true_positives,false_positives,false_negatives,precision,recall,f1,mean_matched_iou,n_gt_tree,n_matched_tree,tree_commission_rate
+detectron2,,58,1,1,1,0,57,1.0,0.0172,0.0339,0.1075,21,1,0.0476
+matterport,,58,1,4,1,3,57,0.25,0.0172,0.0323,0.1157,21,3,0.1429
+sam3,,58,3,6,3,3,55,0.5,0.0517,0.0938,0.5761,21,3,0.1429
