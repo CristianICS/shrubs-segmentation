@@ -17,8 +17,15 @@ R/.Rproj.user
 R/R.Rproj
 results/deployment/**
 !results/deployment/README.md
-results/evaluation
-results/lidar_refined
+results/evaluation/deployment_accuracy/**
+!results/evaluation/deployment_accuracy/summary.csv
+results/evaluation/lidar/**
+!results/evaluation/lidar/comparative_stats.csv
+results/lidar_refined/**
+!results/lidar_refined/README.md
+results/evaluation/model_detectron2
+results/evaluation/model_matterport
+results/evaluation/model_sam3
 results/*.pdf
 Rplots.pdf
 .Rproj.user
