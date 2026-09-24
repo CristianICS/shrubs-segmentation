@@ -2,11 +2,16 @@ name: mrcnn_masks
 channels:
     - conda-forge
 dependencies:
-    - geopandas
+    # GeoSeries.union_all() (evaluate_deployment_accuracy.py) needs geopandas >= 1.0
+    - geopandas>=1.0
     - rasterio
+    # Pure-Python affine transforms (refine_detections.py)
+    - affine
     - numpy
     - shapely
     - pyproj
     - opencv
     - gdal
     - pycocotools
+    # Writes the PNG windows in tile_orthomosaic.py
+    - pillow

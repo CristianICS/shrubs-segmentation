@@ -11,3 +11,5 @@ opencv-python
 h5py==2.10.0
 imgaug
 IPython[all]
+# Reads the window transforms written by tile_orthomosaic.py (matterport_deploy.py)
+affine

@@ -246,6 +246,14 @@ CUDA_HOME: None - invalid!
 
 Your current Detectron2 installation already contains functional CUDA extensions. You can proceed with basic GPU training. The missing `CUDA_HOME` means you currently cannot easily recompile Detectron2 or other CUDA extensions. It does not prevent you from using the CUDA extension that has already been compiled successfully.
 
+**Install the project dependencies**
+
+Detectron2 does not install `rasterio` or OpenCV, which `detectron2_deploy.py` needs to tile the orthomosaic and extract the mask polygons:
+
+```bash
+python -m pip install rasterio opencv-python-headless
+```
+
 **Fix possible errors**
 
 Detectron2 source imports `pkg_resources`, but recent setuptools versions, starting with version 82, no longer include that module. If an error like this appears:
