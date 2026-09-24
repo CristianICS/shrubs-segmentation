@@ -18,7 +18,8 @@ For each mask the CHM cells whose centre falls inside it are summarised
 
 The CHM must be the non-interpolated one, so that NaN really means "no
 LiDAR support". Use --stats-only on the annotations to inspect the height
-distributions before choosing thresholds.
+distributions before choosing thresholds. For multi-layer files (e.g. the
+annotation GPKG) pass the layer with --layer.
 
 Example usage:
 
@@ -145,6 +146,9 @@ def refine(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Refine predicted masks with the LiDAR CHM.")
     parser.add_argument("predictions", type=Path, help="Polygon file (GeoJSON, GPKG, ...).")
+    parser.add_argument("--layer", default=None,
+                        help="Layer to read when the input holds several (e.g. a GPKG). "
+                             "Defaults to the first layer.")
     parser.add_argument("--chm", type=Path, required=True, help="Non-interpolated CHM GeoTIFF.")
     parser.add_argument("--output", type=Path, required=True,
                         help="Output vector file with the retained masks; rejected masks and "
@@ -165,7 +169,7 @@ def main() -> None:
                         help="Only write the statistics table (e.g. to inspect annotations).")
     args = parser.parse_args()
 
-    predictions = gpd.read_file(args.predictions)
+    predictions = gpd.read_file(args.predictions, layer=args.layer)
     with rasterio.open(args.chm) as chm:
         if predictions.crs != chm.crs:
             predictions = predictions.to_crs(chm.crs)
