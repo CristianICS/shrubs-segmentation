@@ -286,7 +286,7 @@ All the variables are already set up inside the script. If you want to modify th
 After training the model, the statistics are extracted using the PI test data and the FW instances. It mimics the paper's metrics and graphics to allow a comparisson.
 
 ```bash
-python evaluate_detectron2.py \
+python detectron2_evaluate.py \
   --weights model_best.pth \
   --dataset shrubs_test_pi \
     data/JuniperMapper/Photo_Interpretation_Data/Test/Annotations/Test.json \
