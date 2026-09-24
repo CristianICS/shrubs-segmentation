@@ -12,7 +12,7 @@ Deploy all three trained models (Detectron2 Mask R-CNN, Matterport Mask R-CNN, S
 
 ## Data
 
-- `data/rasters/orthomosaic_clip.tif`: the RGBA orthomosaic (5cm resolution), clipped to a smaller AOI around the `field_work` plot for faster iteration. No pre-cropped tile files are consumed for deployment any more (see below).
+- `data/rasters/orthomosaic_clip.tif`: the RGBA orthomosaic (5cm resolution), clipped to a smaller AOI around the field_work plot for faster iteration. No pre-cropped tile files are consumed for deployment any more (see below).
 - `data/encinacorba_annotations.gpkg`:
   - `field_work_masks`: Manually digitized ground truth masks (EPSG:25830, 79 polygons). It contains:
     - 58 shrub masks (`shrub == 1`, mean 3.2 square meters)
@@ -73,7 +73,7 @@ The `field_work_masks` layer contains every shrub inside the validation plots (`
 
 After the evaluation, a summary with the statistics per model is created with the following variables: `model`, `sam3_prompt`, `n_gt_shrub`, `n_matched_shrub`, `n_predictions_in_plot`, `true_positives`, `false_positives`, `false_negatives`, `precision`, `recall`, `f1`, `mean_matched_iou`, `n_gt_tree`, `n_matched_tree`, `tree_commission_rate`. `model` is always the base model type (`detectron2`, `matterport`, `sam3`); `sam3_prompt` disambiguates the SAM 3 rows by the text prompt used (empty for the other models). It also writes one `<run_name>_matches.csv` per run with the per-ground-truth-polygon match detail -- `<run_name>` is `detectron2`/`matterport` as-is, or `sam3_<prompt>` for SAM 3 (e.g. `sam3_shrub_matches.csv`, `sam3_brown_shrub_matches.csv`), which also gets a `sam3_prompt` column.
 
-`Python/sam3_union_predictions.py` unions every discovered SAM 3 prompt's shrub map from `results/deployment/` into one combined map, dissolving polygons that overlap or touch across prompts (the same connected-component + `unary_union` approach `refine_detections.py` uses for tile-seam duplicates) so a shrub caught by more than one prompt counts once. It writes the union to `results/deployment/sam3_union.geojson`, scores it the same way, and folds the result into the existing `summary.csv` as a `model=sam3`, `sam3_prompt=union (all prompts)` row (plus its own `sam3_union_matches.csv`) -- run it after `evaluate_deployment_accuracy.py` so it updates rather than recreates `summary.csv`.
+Scores of the unrefined shrub maps in this folder against the 58 shrub and 21 tree polygons of `field_work_masks`. `N masks` is the number of predicted masks that intersect the plot (`TP + FP`), `Tree rate` is the tree commission rate and Precision, Recall and F1 are computed as described above (IoU $\geq 0.1$). Most models detect only 1 to 3 of the 58 shrubs, so precision rests on very few predictions.
 
 ## Reproducibility steps
 
@@ -142,15 +142,6 @@ python Python/evaluate_deployment_accuracy.py \
     results/deployment/shrub_map_matterport.geojson \
     results/deployment/shrub_map_sam3.geojson \
   --model-names detectron2 matterport sam3 \
-  --ground-truth data/encinacorba_annotations.gpkg --layer field_work_masks \
-  --rois-layer square_rois \
-  --output-dir results/evaluation/deployment_accuracy
-
-# 6. Union all SAM 3 prompts and score it too — conda env mrcnn_masks
-# Run this after step 5: it adds a model=sam3, sam3_prompt="union (all prompts)"
-# row to the same summary.csv rather than recreating it.
-python Python/sam3_union_predictions.py \
-  --deployment-dir results/deployment \
   --ground-truth data/encinacorba_annotations.gpkg --layer field_work_masks \
   --rois-layer square_rois \
   --output-dir results/evaluation/deployment_accuracy
