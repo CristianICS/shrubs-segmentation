@@ -9,7 +9,7 @@ predicted masks, per-pixel confidence, and per-instance boxes/scores.
 
 Example usage:
 
-python detectron2_predict.py \
+python Python/detectron2_predict.py \
   --weights data/logs/detectron2/model_best.pth \
   --input data/unlabeled_images \
   --output results/inference/model_detectron2
@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Segment shrubs in RGB images with a trained Detectron2 Mask R-CNN checkpoint."
     )
-    parser.add_argument("input", type=Path, help="Image file or folder of images.")
+    parser.add_argument("--input", type=Path, required=True, help="Image file or folder of images.")
     parser.add_argument("--weights", type=Path, required=True, help="Trained Detectron2 .pth checkpoint.")
     parser.add_argument("--output", type=Path, required=True, help="Output directory.")
     parser.add_argument(

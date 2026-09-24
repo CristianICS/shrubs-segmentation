@@ -322,9 +322,9 @@ python refine_detections.py \
 
 Note: to segment a plain set of RGB images with a trained checkpoint, with no COCO ground-truth annotations nor georeferenced image required, use `detectron2_predict.py`:
 
-```python
-python detectron2_predict.py \
-  --weights model_best.pth \
+```bash
+python Python/detectron2_predict.py \
+  --weights data/logs/detectron2/model_best.pth \
   --input data/unlabeled_images \
   --output results/inference/model_detectron2
 ```
