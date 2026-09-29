@@ -113,7 +113,7 @@ python Python/matterport_deploy.py \
   --confidence 0.50
 ```
 
-Then, to produce the final shrub masks, use `refine_detections.py` inside the `masks_mrcnn` environment:
+Then, to produce the final shrub masks, use `refine_detections.py` inside the `mrcnn_masks` environment:
 
 ```bash
 python Python/refine_detections.py \
@@ -319,7 +319,7 @@ python Python/detectron2_deploy.py \
 
 > Note that pretilling operation is not required here because the model internally perform the tiling.
 
-Then, to produce the final shrub masks, use `refine_detections.py` inside the `masks_mrcnn` environment:
+Then, to produce the final shrub masks, use `refine_detections.py` inside the `mrcnn_masks` environment:
 
 ```bash
 python Python/refine_detections.py \
@@ -489,13 +489,13 @@ The model has been run with the following prompts to compare semantically simila
 
 Run `python Python/sam3_deploy.py --help` for the remaining options (`--confidence`, `--rgb-bands`, `--tile-size`, `--overlap`, `--overwrite`).
 
-The code writes a binary shrub GeoTIFF, a maximum-confidence GeoTIFF, and a CSV of tile-level instances.
+The code writes a binary shrub GeoTIFF, a maximum-confidence GeoTIFF, a CSV of tile-level instances, and one `<image_stem>_r<row>_c<col>_masks.json` file per window with the per-instance mask polygons.
 
-After inference, the masks must be refined as in the previous models using the `Python/sam3_refine_detections.py` script. Run it inside the `mrcnn_masks` environment since it needs `geopandas`:
+Then, to produce the final shrub masks, use `refine_detections.py` inside the `mrcnn_masks` environment, as with the previous models. Run it once per prompt:
 
 ```bash
-python Python/sam3_refine_detections.py \
-  results/deployment/tile_masks/sam3/<prompt> \
+python Python/refine_detections.py \
+  --predictions results/deployment/tile_masks/sam3/<prompt> \
   --output results/deployment/<prompt>_map_sam3.geojson \
   --crs EPSG:25830
 ```
@@ -515,6 +515,87 @@ After the deployment phase, each model's shrub map is scored against the manuall
 See [the `results/deployment/README.md`](./results/deployment/README.md) for more information.
 
 ## LiDAR refinement
+
+The model masks come from RGB images only, so a shrub mask can include part of a neighbouring tree crown, and a tree can be segmented as a shrub. The LiDAR point cloud gives an independent height measurement to catch those errors. The point cloud is processed in R to produce a canopy height model (CHM), and then a Python script checks every model mask against that CHM. The same thresholds are applied to all three models.
+
+### R setup
+
+The R package versions used to produce the results are recorded in `renv.lock` (R 4.6.1). To install the same versions, run from the repository root:
+
+```r
+install.packages("renv")
+renv::restore()
+```
+
+The lockfile covers these packages and their dependencies: `lidR`, `RMCC`, `terra`, `sf`, `dplyr`, `ggplot2`, `patchwork`, `data.table`, `rstudioapi`, `tidyr`, `asdreader`, `signal`, `plyr` and [`lidaynight`](https://github.com/CristianICS/lidaynight). `lidaynight` is a custom package that computes the metrics of each GNSS target in `validate_ground_cls.R`. `lidR`, `rlas`, `RMCC` and `lidaynight` are installed from GitHub at the commit recorded in the lockfile, so `renv::restore()` needs [Rtools](https://cran.r-project.org/bin/windows/Rtools/) on Windows to compile them.
+
+Each script finds the repository root by itself when it is opened in RStudio. Otherwise, it uses the working directory, so run the scripts from the repository root:
+
+```bash
+Rscript R/ground_cls.R
+```
+
+### 1. Ground classification
+
+`R/ground_cls.R` reads `data/point_cloud/encinacorba_cloud.laz` and splits it into 250 m tiles with a 50 m buffer. It removes the noise points with a statistical outlier filter (SOR) and then classifies the ground points with three algorithms:
+
+| Algorithm | Parameters | Output folder (inside `data/point_cloud/las_outlier_filter_tiles/`) |
+| --- | --- | --- |
+| Multiscale Curvature Classification (MCC) | `mcc(1, 0.3)`, from Montealegre et al. (2015) | `las_mcc_cls_tiles` |
+| Progressive Morphological Filter (PMF) | Window sizes 3 to 12 m, height thresholds 0.1 to 1.5 m | `las_pmf_cls_tiles` |
+| Progressive TIN Densification (PTD) | Three angle/distance combinations: 30°/2 m, 30°/3 m and 40°/3 m | `las_ptd_cls_tiles_<angle>_<distance>` |
+
+Steps whose output folder already contains tiles are skipped. To recompute one, delete its folder.
+
+### 2. Ground classification validation
+
+`R/validate_ground_cls.R` compares each classified point cloud with the GNSS elevation of the field targets (`data/spectral_signatures/spec_locations.geojson`). For every target, it takes the ground points within 10 cm and computes the RMSE, the percentage of points more than 0.5 m away from the target height, and the thickness of the ground layer. It writes:
+
+- `results/evaluation/lidar/comparative_stats.csv`: one row per point cloud.
+- `results/evaluation/lidar/transect_plot.svg` and `transects.geojson`: four transects comparing MCC, PMF and the best PTD combination.
+
+### 3. DTM and canopy height model
+
+`R/create_dtm_derived_products.R` selects the point cloud with the lowest mean RMSE in `comparative_stats.csv` and creates the following products inside `data/rasters/`:
+
+- `encinacorba_dtm.tif`: the digital terrain model, on the same grid as the orthomosaic.
+- `encinacorba_slope.tif`, `encinacorba_aspect.tif` and `encinacorba_hillshade.tif`.
+- `encinacorba_chm.tif`: the canopy height model at 0.25 m, built from the height-normalized point cloud.
+
+The CHM is not interpolated, so a cell without a LiDAR point stays empty instead of receiving an estimated height. Its 0.25 m grid is aligned with the 5 cm orthomosaic. Set `overwrite <- TRUE` at the top of the script to recompute products that already exist.
+
+### 4. Height of the annotated masks
+
+`R/mask_height_stats.R` extracts the CHM height of every mask in `data/encinacorba_annotations.gpkg` and summarizes it by species and by growth form (tree or shrub). These statistics were used to choose the refinement thresholds. It writes the following files inside `results/evaluation/lidar/`:
+
+- `mask_height_stats.csv`
+- `species_height_stats.csv`
+- `growth_form_height_stats.csv`
+- the bar plots `species_mean_height.png` and `species_mean_height_points.png`
+
+### 5. Mask refinement
+
+The last step runs in Python, inside the `mrcnn_masks` environment. `Python/run_lidar_refinement.py` refines the shrub map of each model (`results/deployment/shrub_map_<model>.geojson`) with `lidar_refine_masks.py`. It then scores the refined masks against the field annotations with `evaluate_deployment_accuracy.py`:
+
+```bash
+python Python/run_lidar_refinement.py
+```
+
+The default thresholds are the ones used in the paper (`--min-coverage 0.3 --h-tall 1.7 --tall-fraction 0.1`). The results are written to `results/lidar_refined/`, and `summary.csv` holds the scores.
+
+See [the `results/lidar_refined/README.md`](./results/lidar_refined/README.md) for how each mask is classified and how the thresholds were chosen.
+
+### Field data scripts
+
+The following R scripts prepare the field data. They are not part of the LiDAR workflow:
+
+| Script | Purpose |
+| --- | --- |
+| `R/preprocess_spectres.R` | Reads the raw ASD spectra, removes noisy wavelength regions, applies a Savitzky-Golay filter, and saves `preprocessed_spectral_signatures.rds`. |
+| `R/create_square_rois.R` | Creates a 3x3 m square around each field plot, adds its vegetation composition, and saves it as the `square_rois` layer of `spec_database.gpkg`. |
+| `R/characterize_rois.R` | Plots the species composition of the plots and compares the spectral signatures of shrub and tree plots. |
+
+These scripts also need the `asdreader`, `signal` and `plyr` packages, which are included in `renv.lock`.
 
 ## Licenses
 

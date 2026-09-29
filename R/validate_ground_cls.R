@@ -5,6 +5,7 @@ library(ggplot2)
 library(patchwork)
 library(sf)
 # Custom package to compute target metrics
+# https://github.com/CristianICS/lidaynight
 library(lidaynight)
 
 # Get the current script path if running in RStudio
@@ -22,7 +23,7 @@ cls_mcc_path <- file.path(cloud_dir, "las_mcc_cls_tiles")
 cls_pmf_path <- file.path(cloud_dir, "las_pmf_cls_tiles")
 
 # Three parameter combinations tested for the PTD filter, encoded in each
-# folder name as "<window_size>_<slope_threshold>"
+# folder name as "<angle>_<distance>"
 ptd_variants <- c("30_2", "30_3", "40_3")
 cls_ptd_paths <- setNames(
   file.path(cloud_dir, paste0("las_ptd_cls_tiles_", ptd_variants)),

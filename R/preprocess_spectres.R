@@ -5,7 +5,7 @@ if (rstudioapi::isAvailable()) {
   ROOT <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
 } else {
   # Insert the ROOT dir manually
-  ROOT <- "../../"
+  ROOT <- getwd()
 }
 
 # Load custom functions

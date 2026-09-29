@@ -9,7 +9,7 @@ if (rstudioapi::isAvailable()) {
   root <- getwd()
 }
 
-data_dir <- file.path(root, "data")
+data_dir <- file.path(root, "data", "point_cloud")
 
 # The original point cloud contains 1/6 of the raw cloud (50 pnts/m2)
 las_ctg <- readLAScatalog(
@@ -107,18 +107,37 @@ gc()
 
 # Progressive TIN Densification (PTD) algorithm
 # https://r-lidar.github.io/lidRbook/gnd.html#sec-ptd
-retile_ptd_dir <- file.path(outlier_filter_dir, "las_ptd_cls_tiles")
-if (!dir.exists(retile_ptd_dir)) {
-  dir.create(retile_ptd_dir)
+# Three parameter combinations are tested. Each output folder name encodes
+# "<angle>_<distance>", matching the folders read by validate_ground_cls.R
+ptd_params <- data.frame(
+  angle    = c(30, 30, 40),
+  distance = c(2, 3, 3)
+)
+
+for (i in seq_len(nrow(ptd_params))) {
+  angle <- ptd_params$angle[i]
+  distance <- ptd_params$distance[i]
+
+  retile_ptd_dir <- file.path(
+    outlier_filter_dir,
+    paste0("las_ptd_cls_tiles_", angle, "_", distance)
+  )
+
+  # Skip this combination if its folder already holds classified tiles
+  if (length(list.files(retile_ptd_dir, pattern = "\\.laz$")) > 0) {
+    message("Skipping PTD ", angle, "/", distance, ": tiles already exist")
+    next
+  }
+  dir.create(retile_ptd_dir, showWarnings = FALSE)
+
+  opt_output_files(las_ctg) <- file.path(
+    retile_ptd_dir, "encinacorba_{XLEFT}_{YTOP}_cls"
+  )
+
+  classify_ground(
+    las_ctg,
+    algorithm = ptd(10, angle = angle, distance = distance)
+  )
+
+  gc()
 }
-
-opt_output_files(las_ctg) <- file.path(
-  retile_ptd_dir, "encinacorba_{XLEFT}_{YTOP}_cls"
-)
-
-las_ctg_cls <- classify_ground(
-  las_ctg,
-  algorithm = ptd(10, angle = 30, distance = 2)
-)
-
-gc()
