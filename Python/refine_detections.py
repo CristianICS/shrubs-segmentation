@@ -343,7 +343,7 @@ def load_prediction_polygons(
     print(f"Polygon features saved: {len(records)}")
 
     if len(records) == 0:
-        ValueError("There are no available masks to work with.")
+        raise ValueError("There are no available masks to work with.")
 
     return gpd.GeoDataFrame(
         records,
@@ -662,7 +662,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--merge-distance", type=float, default=0.05)
     parser.add_argument("--minimum-overlap-ratio", type=float, default=0.0)
     parser.add_argument("--merge-same-tile", action="store_true", default=False)
-    parser.add_argument("--close-gaps", action="store_true", default=True)
+    parser.add_argument(
+        "--close-gaps", dest="close_gaps", action="store_true",
+        help="Close small gaps between merged parts by buffering (default).",
+    )
+    parser.add_argument(
+        "--no-close-gaps", dest="close_gaps", action="store_false",
+        help="Merge parts without closing the gaps between them.",
+    )
+    parser.set_defaults(close_gaps=True)
     return parser.parse_args()
 
 

@@ -80,7 +80,7 @@ If the environment were installed correctly, the jupyter notebooks containing th
 We trained a Mask RCNN model with the JuniperMapper dataset, using the Photo Interpreted images. The annotations from JuniperMapper must be converted into a valid Mask RCNN format. Use the following code:
 
 ```bash
-python matterport_convert_annotations.py
+python Python/matterport_convert_annotations.py
 ```
 
 The code creates a custom `json` file with the valid format inside the `JuniperMapper` folder, without removing or updating any of the original files. Then, use `Notebooks/shrubs_train_experiments.ipynb` notebook to train the model. It runs a sequential, three-phase testing design instead of a full hyperparameter grid, which would be costly and more likely to pick a configuration that only looks good by chance.
@@ -107,7 +107,7 @@ This produces plain `<stem>_r<row>_c<col>.png` + `.json` transform sidecar pairs
 After tilling operation, run the following code to run the inference using the current best checkpoint (`data/logs/matterport/best_model_configuration.json`). Run the code inside `mrcnn_tf2` conda environment:
 
 ```bash
-python matterport_deploy.py \
+python Python/matterport_deploy.py \
   --tiles data/rasters/deployment_tiles/matterport \
   --output results/deployment/tile_masks/matterport \
   --confidence 0.50
@@ -116,7 +116,7 @@ python matterport_deploy.py \
 Then, to produce the final shrub masks, use `refine_detections.py` inside the `masks_mrcnn` environment:
 
 ```bash
-python refine_detections.py \
+python Python/refine_detections.py \
   --predictions results/deployment/tile_masks/matterport \
   --output results/deployment/shrub_map_matterport.geojson \
   --crs EPSG:25830
@@ -274,17 +274,17 @@ python -m pip install "setuptools<82"
 
 In order to reproduce the original paper and get the weights of the model, first the JuniperMapper labels have to be converted. Run the `detectron2_convert_annotations.py` inside the `mrcnn_masks` conda environment in order to produce valid instances, i.e., one annotation dictionary equals one instance.
 
-```python
-python detectron2_convert_annotations.py ^
-  --images-dir ./data/Test/Images ^
-  --shapefiles-dir ./data/Test/Shapefiles ^
-  --output-json ./data/Test/annotations/Test.json
+```bash
+python Python/detectron2_convert_annotations.py ^
+  --images-dir data/JuniperMapper/Photo_Interpretation_Data/Test/Images \
+  --shapefiles-dir data/.../Test/Annotations/Shapefiles ^
+  --output-json data/.../Test/Annotations/Test.json
 ```
 
 Then, train the model following the parameters used by Khaldi et al. 2024, using the training set to optimize model weights and the validation set to select checkpoint and optionally tune training configuration. Inside the WSL environment run:
 
-```python
-python detectron2_shrubs_train.py
+```bash
+python Python/detectron2_shrubs_train.py
 ```
 
 All the variables are already set up inside the script. If you want to modify them, open the python file and change the global variables containing the paths of the training data and the folder to store the weights.
@@ -294,7 +294,7 @@ All the variables are already set up inside the script. If you want to modify th
 After training the model, the statistics are extracted using the PI test data and the FW instances. It mimics the paper's metrics and graphics to allow a comparisson.
 
 ```bash
-python detectron2_evaluate.py \
+python Python/detectron2_evaluate.py \
   --weights model_best.pth \
   --dataset shrubs_test_pi \
     data/JuniperMapper/Photo_Interpretation_Data/Test/Annotations/Test.json \
@@ -310,7 +310,7 @@ python detectron2_evaluate.py \
 To segment a georeferenced mosaic and produce the shrub masks, use the following code inside the `detectron2` virtual environment:
 
 ```bash
-python detectron2_deploy.py \
+python Python/detectron2_deploy.py \
   --orthomosaic data/rasters/orthomosaic_clip.tif \
   --weights data/logs/detectron2/model_best.pth \
   --output results/deployment/tile_masks/detectron2 \
@@ -322,7 +322,7 @@ python detectron2_deploy.py \
 Then, to produce the final shrub masks, use `refine_detections.py` inside the `masks_mrcnn` environment:
 
 ```bash
-python refine_detections.py \
+python Python/refine_detections.py \
   --predictions results/deployment/tile_masks/detectron2 \
   --output results/deployment/shrub_map_detectron2.geojson \
   --crs EPSG:25830

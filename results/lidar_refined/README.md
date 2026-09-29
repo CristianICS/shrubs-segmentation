@@ -46,7 +46,8 @@ python Python/lidar_refine_masks.py \
    data/encinacorba_annotations.gpkg \
    --layer field_work_masks \
    --chm data/rasters/encinacorba_chm.tif \
-   --output results/lidar_refined/annotations.gpkg \ --stats-only --min-coverage 0.3 --h-tall 1.7 --tall-fraction 0.1
+   --output results/lidar_refined/annotations.gpkg \
+   --stats-only --min-coverage 0.3 --h-tall 1.7 --tall-fraction 0.1
 ```
 
 After running the script, only 5.5% of CHM cells hold a direct LiDAR measurement, so most cells contain no point. Shrub masks have a median of 30 valid cells and 22 of 60 have fewer than 20, so their p90 is noisy. Only 8 shrub masks have fewer than 5 valid cells.
