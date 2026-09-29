@@ -21,6 +21,7 @@ results/evaluation/deployment_accuracy/**
 !results/evaluation/deployment_accuracy/summary.csv
 results/evaluation/lidar/**
 !results/evaluation/lidar/comparative_stats.csv
+!results/evaluation/lidar/mask_height_stats.csv
 results/lidar_refined/**
 !results/lidar_refined/README.md
 !results/lidar_refined/annotations_stats.csv
