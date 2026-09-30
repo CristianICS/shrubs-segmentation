@@ -17,6 +17,11 @@ from rasterio.windows import transform as window_transform
 from shrubs_common import greedy_nms, iter_windows, write_window_masks
 
 SUPPORTED_EXTENSIONS = {".tif", ".tiff"}
+_NUMPY_SCALAR_GLOBALS = [
+    np.core.multiarray.scalar,
+    np.dtype,
+    *(getattr(np.dtypes, name) for name in np.dtypes.__all__),
+]
 
 
 def parse_rgb_bands(value: str) -> tuple[int, int, int]:
@@ -70,7 +75,10 @@ def build_processor(confidence: float, checkpoint: Path | None = None):
         # Release checkpoints use ``detector.*`` keys, whereas the image
         # fine-tuning trainer saves plain image-model keys. The upstream
         # builder currently drops the latter silently, so distinguish them.
-        payload = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        # Fine-tuned checkpoints store the best-epoch AP meters as numpy
+        # scalars (see `training.py`), so allowlist numpy scalars and dtypes.
+        with torch.serialization.safe_globals(_NUMPY_SCALAR_GLOBALS):
+            payload = torch.load(checkpoint, map_location="cpu", weights_only=True)
         state_dict = payload.get("model", payload)
         state_dict = {
             key.removeprefix("module."): value for key, value in state_dict.items()

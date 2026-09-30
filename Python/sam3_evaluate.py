@@ -1,5 +1,7 @@
 """
-Evaluate a SAM 3 checkpoint (zero-shot or domain-adapted) on COCO-format shrub datasets.
+Evaluate a SAM 3 checkpoint (zero-shot or domain-adapted)
+
+Use COCO-format shrub datasets.
 
 Mirrors `detectron2_evaluate.py`: it scores whole, untiled images with a text
 prompt and shares the same pixel/instance-IoU/S-IoU metrics, confidence sweep,
