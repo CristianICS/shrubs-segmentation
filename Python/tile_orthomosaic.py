@@ -5,8 +5,8 @@ scripts that cannot use rasterio directly.
 Detectron2 and SAM 3 tile the orthomosaic internally at inference time (see
 `detectron2_deploy.py`, `bin/shrubs_sam3/utils.py`), since their environments
 can use rasterio directly. Matterport's `mrcnn_tf2` conda env cannot: it has
-a Windows DLL conflict between its old TensorFlow/Keras stack and GDAL (see
-DEPLOYMENT_PLAN.md). So for Matterport only, this script does the windowed
+a Windows DLL conflict between its old TensorFlow/Keras stack and GDAL.
+So for Matterport only, this script does the windowed
 reading up front, in an environment where rasterio works, and writes each
 window as a plain `<stem>_r<row>_c<col>.png` (ordinary RGB pixel data, no
 GDAL needed to read it) plus a `<stem>_r<row>_c<col>.json` sidecar carrying

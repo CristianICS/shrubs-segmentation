@@ -135,39 +135,6 @@ def resolve_checkpoint_path(stored_path, metadata_path):
     return metadata_dir / stored.parent.name / stored.name
 
 
-class ShrubMapDataset(utils.Dataset):
-    """Define the shrub dataset to create the final map. No mask configuration"""
-
-    def load_dataset(self, img_dir):
-        """
-        Adds information (image ID, image path and annotation file path)
-        about each image in a dictionary.
-        """
-        # Add classes
-        self.add_class("dataset", 1, "shrub")
-
-        # Add images
-        for i, img_name in enumerate(os.listdir(img_dir)):
-            
-            if not img_name.endswith(".tif"):
-                continue
-            
-            img_path = os.path.join(img_dir, img_name)
-            self.add_image('dataset', image_id=i, path=img_path)
-
-    def image_reference(self, image_id):
-        """Return image path"""
-        return self.image_info[image_id]["path"]
-
-    def load_mask(self, image_id):
-        """
-        Return an empty mask and avoid the warning.
-        """
-        mask = np.empty([0, 0, 0])
-        class_ids = np.empty([0], np.int32)
-        return mask, class_ids
-
-
 class ShrubDataset(utils.Dataset):
     """Define the shrub dataset."""
 

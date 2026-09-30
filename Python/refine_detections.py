@@ -15,7 +15,6 @@ import argparse
 import json
 
 import geopandas as gpd
-import rasterio
 from affine import Affine
 from rasterio.crs import CRS
 from rasterio.warp import transform_geom
@@ -23,10 +22,6 @@ from shapely.geometry import shape, mapping
 from shapely.ops import unary_union
 
 
-ROOT = Path(__file__).absolute().parent.parent
-
-MASKS_DIR = ROOT / "data" / "rasters" / "deployment_tiles" / "matterport_masks"
-OUT_PATH = ROOT / "results" / "predicted_shrub_masks.geojson"
 IMG_EPSG = 25830
 
 
@@ -215,7 +210,6 @@ def _extract_records(
 
 def load_prediction_polygons(
     predictions_dir,
-    images_dir=None,
     merge_crs=None,
     prediction_pattern="_masks.json",
     pixel_center=False,
@@ -223,23 +217,15 @@ def load_prediction_polygons(
     """
     Read all prediction files and convert polygon coordinates to merge_crs.
 
-    Each prediction file can georeference itself two ways:
-
-    - Embedded (preferred): its `metadata` object carries its own affine
-      `transform` (6 coefficients) and `crs`, as written by the internal-
-      tiling deployment scripts (`detectron2_deploy.py`, `matterport_deploy.py`,
-      `sam3_deploy.py`). No paired GeoTIFF is required in that case.
-    - Paired GeoTIFF (legacy): when `metadata` has no `transform`, the loader
-      falls back to opening `<stem>.tif` in `images_dir` for its transform/CRS,
-      matching one pre-cropped tile file per prediction file.
+    Each prediction file georeferences itself: its `metadata` object carries
+    the window's affine `transform` (6 coefficients) and `crs`, as written by
+    `detectron2_deploy.py`, `matterport_deploy.py` and `sam3_deploy.py`.
+    Files without them are skipped.
 
     Parameters
     ----------
     predictions_dir : str or Path
-        Directory containing the per-tile/per-window prediction JSON files.
-    images_dir : str or Path or None
-        Directory containing the georeferenced TIFF files, used only for
-        prediction files with no embedded transform.
+        Directory containing the per-window prediction JSON files.
     merge_crs : str
         Projected CRS used for grouping and distance calculations.
         For example, "EPSG:25830".
@@ -278,64 +264,28 @@ def load_prediction_polygons(
         metadata = prediction.get("metadata") or {}
         embedded_transform = metadata.get("transform")
 
-        if embedded_transform is not None:
-            image_name = prediction_path.name.replace(prediction_pattern, "")
-            source_crs = CRS.from_user_input(metadata["crs"])
-            affine_transform = Affine(*embedded_transform[:6])
-
-            if merge_crs is None:
-                if retained_crs is None:
-                    retained_crs = source_crs
-                elif source_crs != retained_crs:
-                    raise ValueError(
-                        "The prediction files use different CRSs. "
-                        "Provide target_crs to reproject them to one CRS."
-                    )
-
-            records.extend(_extract_records(
-                features, prediction_path, image_name,
-                source_crs, affine_transform, merge_crs, pixel_center,
-            ))
-            processed_files += 1
-            continue
-
-        if images_dir is None:
-            print(f"Skipped file with no embedded transform and no images_dir: {prediction_path}")
+        if embedded_transform is None or metadata.get("crs") is None:
+            print(f"Skipped file with no embedded transform or CRS: {prediction_path}")
             skipped_files += 1
             continue
 
-        image_name = prediction_path.name.replace(prediction_pattern, ".tif")
-        tif_path = Path(images_dir) / image_name
+        image_name = prediction_path.name.replace(prediction_pattern, "")
+        source_crs = CRS.from_user_input(metadata["crs"])
+        affine_transform = Affine(*embedded_transform[:6])
 
-        if not tif_path.exists():
-            print(f"Skipped file: {prediction_path}")
-            print(f"Invalid reference image: {tif_path}")
-            skipped_files += 1
-            continue
+        if merge_crs is None:
+            if retained_crs is None:
+                retained_crs = source_crs
+            elif source_crs != retained_crs:
+                raise ValueError(
+                    "The prediction files use different CRSs. "
+                    "Provide target_crs to reproject them to one CRS."
+                )
 
-        with rasterio.open(tif_path) as src:
-            if src.crs is None:
-                print(f"Skipped TIFF without CRS: {tif_path}")
-                skipped_files += 1
-                continue
-
-            source_crs = src.crs
-            affine_transform = src.transform
-
-            if merge_crs is None:
-                if retained_crs is None:
-                    retained_crs = source_crs
-                elif source_crs != retained_crs:
-                    raise ValueError(
-                        "The TIFF files use different CRSs. "
-                        "Provide target_crs to reproject them to one CRS."
-                    )
-
-            records.extend(_extract_records(
-                features, prediction_path, image_name,
-                source_crs, affine_transform, merge_crs, pixel_center,
-            ))
-
+        records.extend(_extract_records(
+            features, prediction_path, image_name,
+            source_crs, affine_transform, merge_crs, pixel_center,
+        ))
         processed_files += 1
 
     print(f"Prediction files processed: {processed_files}")
@@ -550,7 +500,6 @@ def merge_and_refine_predictions(
     predictions_dir,
     output_path,
     merge_crs,
-    images_dir=None,
     output_crs=None,
     prediction_pattern="_masks.json",
     merge_distance=0.0,
@@ -586,7 +535,6 @@ def merge_and_refine_predictions(
     """
     detections = load_prediction_polygons(
         predictions_dir=predictions_dir,
-        images_dir=images_dir,
         merge_crs=merge_crs,
         prediction_pattern=prediction_pattern,
     )
@@ -646,17 +594,10 @@ def parse_args() -> argparse.Namespace:
         description="Merge per-tile mask polygons across tile boundaries into georeferenced shrubs."
     )
     parser.add_argument(
-        "--predictions", type=Path, default=MASKS_DIR,
-        help=f"Directory with per-tile '*_masks.json' files (default: {MASKS_DIR}).",
+        "--predictions", type=Path, required=True,
+        help="Directory with per-window '*_masks.json' files.",
     )
-    parser.add_argument(
-        "--images", type=Path, default=None,
-        help=(
-            "Directory with paired georeferenced tile GeoTIFFs. Only needed for legacy "
-            "prediction files with no embedded 'transform' in their metadata."
-        ),
-    )
-    parser.add_argument("--output", type=Path, default=OUT_PATH, help=f"Output GeoJSON (default: {OUT_PATH}).")
+    parser.add_argument("--output", type=Path, required=True, help="Output GeoJSON.")
     parser.add_argument("--crs", default=f"EPSG:{IMG_EPSG}", help="Projected CRS used for merging and output.")
     parser.add_argument("--prediction-pattern", default="_masks.json")
     parser.add_argument("--merge-distance", type=float, default=0.05)
@@ -678,7 +619,6 @@ if __name__ == "__main__":
     args = parse_args()
     merge_and_refine_predictions(
         predictions_dir=args.predictions,
-        images_dir=args.images,
         output_path=args.output,
         merge_crs=args.crs,
         output_crs=None,

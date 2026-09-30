@@ -11,11 +11,6 @@ import csv
 from pathlib import Path
 from typing import Mapping
 
-import matplotlib
-# These plots are only ever saved to disk. Force the non-GUI Agg backend so
-# this never depends on a Qt/Tk toolkit being installed in the environment,
-# and never opens a window; `show=True` is then a documented no-op.
-matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
 from .metrics import (
@@ -25,6 +20,15 @@ from .metrics import (
 
 
 def plot_performance(csv_files: Mapping[float, Mapping[str, Path]], out_dir: Path, show: bool) -> None:
+    """Save one F1-vs-confidence figure per evaluation threshold.
+
+    Without `show`, use the non-GUI Agg backend so saving never depends on a
+    Qt/Tk toolkit. With `show`, keep matplotlib's default backend so each
+    figure opens in a window (matplotlib falls back to Agg with a warning
+    when no display is available).
+    """
+    if not show:
+        plt.switch_backend("Agg")
     out_dir.mkdir(parents=True, exist_ok=True)
     for evaluation_threshold, metric_files in csv_files.items():
         fig, ax = plt.subplots(figsize=(7, 5))
@@ -59,8 +63,14 @@ def run_evaluation_report(
 
     Shared by `detectron2_evaluate.py` and `sam3_evaluate.py`, which both expose
     the same `--class-id`, `--pixel-confidence`, `--confidence-thresholds`,
-    `--evaluation-thresholds`, `--minimum-intersection-pixels`, and `--show-plots` flags.
+    `--evaluation-thresholds`, `--iou-metric-definition`,
+    `--minimum-intersection-pixels`, and `--show-plots` flags.
+
+    The paper IoU definition writes `iou_paper_threshold_<pct>.csv` so its
+    results never overwrite the standard `iou_threshold_<pct>.csv`.
     """
+    iou_prefix = "iou_paper" if args.iou_metric_definition == "paper" else "iou"
+    iou_label = "IoU (paper)" if args.iou_metric_definition == "paper" else "IoU"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     pixel = evaluate_pixel_metrics(
@@ -80,7 +90,7 @@ def run_evaluation_report(
             evaluation_threshold, "evaluation threshold", allow_zero=False
         )
         percent = round(evaluation_threshold * 100)
-        iou_csv = output_dir / f"iou_threshold_{percent}.csv"
+        iou_csv = output_dir / f"{iou_prefix}_threshold_{percent}.csv"
         siou_csv = output_dir / f"siou_threshold_{percent}.csv"
 
         write_sweep(
@@ -89,6 +99,7 @@ def run_evaluation_report(
             evaluator=lambda confidence, t=evaluation_threshold: evaluate_instance_iou(
                 ground_truths, predictions, class_id=args.class_id,
                 confidence_threshold=confidence, iou_threshold=t,
+                metric_definition=args.iou_metric_definition,
             ),
         )
         write_sweep(
@@ -100,6 +111,6 @@ def run_evaluation_report(
                 minimum_intersection_pixels=args.minimum_intersection_pixels,
             ),
         )
-        plot_inputs[evaluation_threshold] = {"IoU": iou_csv, "S-IoU": siou_csv}
+        plot_inputs[evaluation_threshold] = {iou_label: iou_csv, "S-IoU": siou_csv}
 
     plot_performance(plot_inputs, output_dir, args.show_plots)

@@ -153,6 +153,23 @@ scratch:
     use_original_sizes_box: true
     use_presence: ${scratch.use_presence_eval}
 
+  # Same post-processing, but also returning each prediction's mask resized
+  # to the original tile size and RLE-encoded, so the in-loop validation can
+  # score masks (COCO "segm") instead of only boxes. It keeps the top 100
+  # detections, the same cap the PredictionDumper applies afterwards anyway.
+  original_mask_postprocessor:
+    _target_: sam3.eval.postprocessors.PostProcessImage
+    max_dets_per_img: 100
+    iou_type: "segm"
+    use_original_ids: true
+    use_original_sizes_box: true
+    use_original_sizes_mask: true
+    convert_mask_to_rle: true
+    # Interpolate masks on whatever device they already live on, so a
+    # `--device cpu` run doesn't hit the upstream CUDA-only assertion.
+    always_interpolate_masks_on_gpu: false
+    use_presence: ${scratch.use_presence_eval}
+
   matcher:
     _target_: sam3.train.matcher.BinaryHungarianMatcherV2
     focal: true
@@ -291,14 +308,28 @@ trainer:
     checkpoint_path: null
     load_from_HF: true
 
-  # Bbox-AP-only meter, used for the periodic in-loop validation and best-
-  # checkpoint selection during training. Mask quality is not judged here:
-  # `Python/sam3_evaluate.py` (pixel/instance-IoU/S-IoU against the same
-  # split) is the authoritative comparison across zero-shot/domain-adapted
-  # checkpoints once training finishes.
+  # In-loop validation on the JuniperMapper Photo Interpretation Val split,
+  # run after every epoch (`val_epoch_freq`). `segmentation` (COCO mask AP)
+  # is the checkpoint-selection meter: FrozenBackboneTrainer copies the epoch
+  # with the highest `coco_eval_segm_AP_50` to `checkpoints/model_best.pt`,
+  # the same criterion Detectron2 (segm/AP50) and Matterport (mask AP50) use.
+  # `detection` (box AP) is kept for reference only.
   meters:
     val:
       shrubs_val:
+        segmentation:
+          _target_: sam3.eval.coco_writer.PredictionDumper
+          iou_type: "segm"
+          dump_dir: ${launcher.experiment_log_dir}/dumps/shrubs_val
+          merge_predictions: True
+          postprocessor: ${scratch.original_mask_postprocessor}
+          gather_pred_via_filesys: ${scratch.gather_pred_via_filesys}
+          maxdets: 100
+          pred_file_evaluators:
+            - _target_: sam3.eval.coco_eval_offline.CocoEvaluatorOfflineWithPredFileEvaluators
+              gt_path: ${paths.val_ann_file}
+              tide: False
+              iou_type: "segm"
         detection:
           _target_: sam3.eval.coco_writer.PredictionDumper
           iou_type: "bbox"
@@ -348,11 +379,11 @@ trainer:
   checkpoint:
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 5
-    # Best-effort: also keep a `val_shrubs_val_detection_<metric>.pt` copy
-    # (one file per tracked metric subkey, e.g. AP/AP50) whenever that metric
-    # improves, on top of the periodic `save_freq` checkpoints every run
-    # always produces.
-    save_best_meters: ["val_shrubs_val/detection"]
+    # Upstream `save_best_meters` is left unset on purpose: it only fires for
+    # meters exposing an `is_better` method, which SAM 3's PredictionDumper
+    # doesn't have, so it never saved anything. Best-checkpoint selection is
+    # done by FrozenBackboneTrainer instead (see `meters` above).
+    save_best_meters: null
 
   logging:
     tensorboard_writer:

@@ -4,13 +4,10 @@ channels:
   - conda-forge
 
 dependencies:
-  # Inference plus the upstream training dependencies used by experiments B/C.
   - python=3.12
   - numpy>=1.26,<2
   - rasterio
-  # Used by sam3_evaluate.py for its F1-versus-confidence plots.
   - matplotlib
-  # Imported by sam3.sam.rope but absent from some SAM 3 dependency metadata.
   - einops
   # SAM 3 imports the deprecated pkg_resources module.
   - setuptools<81
@@ -23,7 +20,6 @@ dependencies:
   - pip
   - pip:
       - --extra-index-url https://download.pytorch.org/whl/cu128
-      # Use Pillow's self-contained Windows wheel alongside pip torchvision.
       - pillow
       # torch<2.11 on Windows builds Gloo with USE_LIBUV disabled, which
       # breaks torch.distributed.init_process_group with
@@ -34,9 +30,7 @@ dependencies:
       # environment file and one known-working version across platforms.
       - torch==2.11.0
       - torchvision
-      # Imported unconditionally through SAM 3's tracker/training type modules.
       - pycocotools>=2.0.11
-      # Imported unconditionally by SAM 3's video predictor module.
       - psutil
       # Imported unconditionally by sam3.train.transforms.point_sampling
       # (used for training's box-noise augmentation), but missing from
@@ -47,9 +41,8 @@ dependencies:
       - opencv-python==4.11.0.86
       # SAM 3 imports Triton; PyTorch 2.11 still requires the Triton 3.6
       # line. Official Triton is Linux-only (and is the one actually used
-      # for training under WSL2 -- see "SAM 3 training on WSL2" in
-      # README.md); the Windows wheel is a third-party port used only for
-      # native-Windows zero-shot inference and is not validated for the
+      # for training under WSL2; the Windows wheel is a third-party port used
+      # only for native-Windows zero-shot inference and is not validated for the
       # torch.compile-heavy paths sam3_domain_adapt.py exercises.
       - "triton==3.6.0; sys_platform == 'linux'"
       - "triton-windows>=3.6,<3.7; sys_platform == 'win32'"

@@ -31,7 +31,7 @@ Shared building blocks (`bin/shrubs_common/`), used by all three models:
 - `tiling.py`: `iter_windows`/`starts` (the window generator) and `read_rgb_window` (alpha-band-aware RGB read). Requires rasterio.
 - `polygons.py`: `masks_to_features`/`write_window_masks` extract real per-instance polygons from a boolean mask stack and writes one `<window_stem>_masks.json` per window, with that window's own affine transform plus CRS embedded in `metadata`. No rasterio dependency, so this half works even where `tiling.py` can't be imported (see below).
 
-The `Python/refine_detections.py` script reads the embedded transform directly. No paired GeoTIFF tile is written or needed. It still falls back to opening `<stem>.tif` in `--images` for old-style prediction files that have no embedded transform.
+The `Python/refine_detections.py` script reads the embedded transform directly. No paired GeoTIFF tile is written or needed. Prediction files without an embedded transform and CRS are skipped.
 
 Per model:
 
@@ -67,7 +67,7 @@ The script `Python/evaluate_deployment_accuracy.py` scores each model's refined,
 
 The tree commission metric is a diagnostic breakdown of what a chunk of the false positives land on, not a separate test (a false positive doesn't need to land on a digitized tree to count).
 
-> Note: The `bin/shrubs_common/metrics.py` and `bin/shrubs_matterport/evaluate.py` cannot be reuse as-is, since those operate on same-shape raster mask stacks from COCO-style datasets, not on independent real-world polygon layers.
+> Note: The `bin/shrubs_common/metrics.py` metrics cannot be reused as-is, since those operate on same-shape raster mask stacks from COCO-style datasets, not on independent real-world polygon layers.
 
 The `field_work_masks` layer contains every shrub inside the validation plots (`square_rois` layer). Because digitization is exhaustive, plain one-to-one-matched precision/recall/F1 is valid. Any in-plot prediction not matched to a real shrub genuinely is a false positive, whether it lands on a digitized tree or anywhere else. 
 

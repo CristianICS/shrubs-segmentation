@@ -8,8 +8,9 @@ system before comparison with the ground-truth annotations.
 The script computes:
 
 * micro-averaged pixel precision, recall, and F1;
-* one-to-one mask-IoU instance precision, recall, and F1;
-* directional S-IoU metrics;
+* mask-IoU instance precision, recall, and F1, with standard one-to-one
+  matching or the Khaldi et al. (2024) definition (`--iou-metric-definition`);
+* directional S-IoU metrics as defined by Khaldi et al. (2024);
 * confidence-threshold sweeps saved as CSV files; and
 * F1-versus-confidence plots.
 
@@ -48,7 +49,7 @@ from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.detection_utils import annotations_to_instances, read_image
 
 sys.path.append(str(Path(Path(__file__).absolute().parent.parent, 'bin')))
-from shrubs_common import run_predictor
+from shrubs_common import METRIC_DEFINITIONS, run_predictor
 from shrubs_common.plotting import run_evaluation_report
 from shrubs_detectron import ScaleMatchedPredictor, build_inference_cfg, inspect_dataset, register_juniper_dataset
 
@@ -118,9 +119,18 @@ def parse_args() -> argparse.Namespace:
         default=0.50,
         help="Confidence threshold used for the standalone pixel evaluation.",
     )
+    parser.add_argument(
+        "--iou-metric-definition",
+        choices=METRIC_DEFINITIONS,
+        default="standard",
+        help=(
+            "IoU counting: 'standard' (COCO-style one-to-one matching) or 'paper' "
+            "(Khaldi et al. 2024 independent best matches, recall = TP / (TP + FN))."
+        ),
+    )
     parser.add_argument("--minimum-intersection-pixels", type=int, default=1)
     parser.add_argument("--device", choices=("cuda", "cpu"), default=None)
-    parser.add_argument("--show-plots", action="store_true")
+    parser.add_argument("--show-plots", action="store_true", help="Also open each saved F1 figure in a window.")
     return parser.parse_args()
 
 

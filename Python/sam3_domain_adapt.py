@@ -3,21 +3,20 @@
 Trains only SAM 3's transformer/detection/segmentation head on JuniperMapper
 (both the SAM 3 vision and language backbones stay frozen, via
 `shrubs_sam3.training.FrozenBackboneTrainer`), so the trainable parameter
-count stays small relative to the dataset -- the conservative recipe from
-`SAM3_upgrade.md`'s Phase 1. This is a thin CLI wrapper: it converts
-JuniperMapper's grouped polygons to per-instance COCO with
+count stays small relative to the dataset. This is a thin CLI wrapper:
+it converts JuniperMapper's grouped polygons to per-instance COCO with
 `prepare_juniper_coco`, then drives the upstream `sam3.train.trainer.Trainer`
 machinery through the Hydra config in `bin/shrubs_sam3/configs/
 juniper_frozen_backbone.yaml`, the same way SAM 3's own `sam3/train/train.py`
 launcher does for a single local process.
 
 The zero-shot CLI (`sam3_deploy.py`) and its default behavior are untouched.
-Once training finishes, compare checkpoints with the existing evaluation
-harness, since this script does not itself pick a "best" mask model:
-
-    python Python/sam3_evaluate.py \\
-      --dataset shrubs_val ... \\
-      --checkpoint data/logs/sam3/domain_adapt/checkpoints/checkpoint_10.pt
+After every epoch the model is validated on the JuniperMapper Photo
+Interpretation Val split, and the epoch with the highest COCO mask AP50
+(ties broken by mask mAP50:95, then the earliest epoch) is saved as
+`<output>/checkpoints/model_best.pt`, with its scores in `model_best.json`.
+This is the same selection criterion as the Detectron2 and Matterport
+Mask R-CNN models.
 
 Example usage:
 
@@ -100,7 +99,10 @@ def build_parser() -> argparse.ArgumentParser:
              "download the gated release checkpoint from Hugging Face instead.",
     )
     parser.add_argument("--max-epochs", type=int, default=30)
-    parser.add_argument("--val-epoch-freq", type=int, default=1)
+    parser.add_argument(
+        "--val-epoch-freq", type=int, default=1,
+        help="Validate (and update model_best.pt) every N epochs (default: %(default)s).",
+    )
     parser.add_argument("--checkpoint-freq", type=int, default=5,
                          help="Save a numbered checkpoint every N epochs (0 disables).")
     parser.add_argument("--batch-size", type=int, default=2)
@@ -217,16 +219,10 @@ def main(argv: list[str] | None = None) -> int:
     checkpoint_dir = output / "checkpoints"
     print(f"Finished. Checkpoints written to: {checkpoint_dir}")
     print(
-        "  checkpoint.pt                          -- latest epoch\n"
-        f"  checkpoint_<N>.pt                       -- every {args.checkpoint_freq} epochs\n"
-        "  val_shrubs_val_detection_<metric>.pt   -- saved whenever that bbox "
-        "metric (e.g. AP, AP50) improved during validation\n"
-        "None of these is picked automatically as the mask model to deploy -- "
-        "that in-loop meter only tracks box AP, not mask quality. Compare "
-        "candidates with Python/sam3_evaluate.py's pixel/instance-IoU/S-IoU "
-        "metrics before picking one, e.g.:\n"
-        f"  python Python/sam3_evaluate.py --checkpoint {checkpoint_dir / 'checkpoint.pt'} "
-        f"--prompt {args.prompt} --dataset shrubs_val <val.json> <val images>"
+        "  model_best.pt       -- highest mask AP50 on the Photo Interpretation "
+        "Val split (the checkpoint to deploy; scores in model_best.json)\n"
+        "  checkpoint.pt       -- latest epoch\n"
+        f"  checkpoint_<N>.pt   -- every {args.checkpoint_freq} epochs"
     )
     return 0
 

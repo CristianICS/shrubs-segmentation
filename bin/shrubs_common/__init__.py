@@ -1,8 +1,10 @@
 """Model-agnostic evaluation metrics shared by the SAM 3 and Detectron2 pipelines."""
 
 from .metrics import (
+    METRIC_DEFINITIONS,
     Prediction,
     PredictionCache,
+    best_iou_matches,
     compute_s_iou_matches,
     confidence_thresholds,
     evaluate_instance_iou,
@@ -30,8 +32,10 @@ except ImportError:
     iter_windows = read_rgb_window = starts = None
 
 __all__ = [
+    "METRIC_DEFINITIONS",
     "Prediction",
     "PredictionCache",
+    "best_iou_matches",
     "compute_s_iou_matches",
     "confidence_thresholds",
     "evaluate_instance_iou",

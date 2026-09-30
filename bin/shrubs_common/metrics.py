@@ -174,7 +174,6 @@ def compute_s_iou_matches(
     return {
         "pred_is_tp": pred_s_iou >= s_iou_threshold,
         "pred_is_fp": pred_s_iou < s_iou_threshold,
-        "gt_is_detected": gt_s_iou >= s_iou_threshold,
         "gt_is_fn": gt_s_iou < s_iou_threshold,
         "pred_scores": pred_scores,
     }
@@ -209,6 +208,30 @@ def evaluate_pixel_metrics(
     }
 
 
+METRIC_DEFINITIONS = ("standard", "paper")
+
+
+def best_iou_matches(
+    pred_masks: np.ndarray,
+    gt_masks: np.ndarray,
+    iou_threshold: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Independent best-match classification used by Khaldi et al. (2024).
+
+    A prediction is a TP when its best IoU with any label reaches the threshold;
+    a label is an FN when its best IoU with any prediction does not. Labels are
+    not consumed, so several predictions can be TPs against the same label.
+    """
+    ious = mask_iou_matrix(pred_masks, gt_masks)
+    pred_is_tp = (
+        ious.max(axis=1) >= iou_threshold if ious.shape[1] else np.zeros(ious.shape[0], dtype=bool)
+    )
+    gt_is_fn = (
+        ious.max(axis=0) < iou_threshold if ious.shape[0] else np.ones(ious.shape[1], dtype=bool)
+    )
+    return pred_is_tp, gt_is_fn
+
+
 def evaluate_instance_iou(
     ground_truths: PredictionCache,
     predictions: PredictionCache,
@@ -216,7 +239,20 @@ def evaluate_instance_iou(
     class_id: int,
     confidence_threshold: float,
     iou_threshold: float,
+    metric_definition: str = "standard",
 ) -> dict[str, float | int]:
+    """Mask-IoU instance precision, recall, and F1.
+
+    `metric_definition="standard"` uses greedy, score-ordered one-to-one matching
+    (COCO-style), so TP + FN always equals the number of labels.
+    `metric_definition="paper"` follows Khaldi et al. (2024): predictions and
+    labels are classified independently by their best IoU (`best_iou_matches`)
+    and recall is TP / (TP + FN), with TP counting predictions and FN labels.
+    """
+    if metric_definition not in METRIC_DEFINITIONS:
+        raise ValueError(
+            f"metric_definition must be one of {METRIC_DEFINITIONS}; received {metric_definition!r}."
+        )
     total_tp = total_fp = total_fn = total_gt = 0
     for image_id, gt in ground_truths.items():
         _, _, gt_masks, _ = filter_instances(gt["boxes"], gt["class_ids"], gt["masks"], class_id)
@@ -226,10 +262,14 @@ def evaluate_instance_iou(
             result["scores"], confidence_threshold,
         )
         assert pred_scores is not None
-        pred_match, gt_match = one_to_one_matches(pred_masks, pred_scores, gt_masks, iou_threshold)
-        total_tp += int(np.count_nonzero(pred_match >= 0))
-        total_fp += int(np.count_nonzero(pred_match < 0))
-        total_fn += int(np.count_nonzero(gt_match < 0))
+        if metric_definition == "paper":
+            pred_is_tp, gt_is_fn = best_iou_matches(pred_masks, gt_masks, iou_threshold)
+        else:
+            pred_match, gt_match = one_to_one_matches(pred_masks, pred_scores, gt_masks, iou_threshold)
+            pred_is_tp, gt_is_fn = pred_match >= 0, gt_match < 0
+        total_tp += int(np.count_nonzero(pred_is_tp))
+        total_fp += int(np.count_nonzero(~pred_is_tp))
+        total_fn += int(np.count_nonzero(gt_is_fn))
         total_gt += gt_masks.shape[-1]
 
     precision, recall, f1 = precision_recall_f1(total_tp, total_fp, total_fn)
@@ -252,7 +292,13 @@ def evaluate_instance_siou(
     siou_threshold: float,
     minimum_intersection_pixels: int,
 ) -> dict[str, float | int]:
-    total_tp = total_fp = total_detected = total_fn = total_gt = 0
+    """Directional S-IoU precision, recall, and F1 as defined by Khaldi et al. (2024).
+
+    TPs and FPs come from the prediction-directed S-IoU (paper Eq. 2) and FNs from
+    the label-directed S-IoU (Eq. 3). Recall is TP / (TP + FN) (Eq. 5), so TP + FN
+    need not equal the number of labels.
+    """
+    total_tp = total_fp = total_fn = total_gt = 0
     for image_id, gt in ground_truths.items():
         _, gt_classes, gt_masks, _ = filter_instances(gt["boxes"], gt["class_ids"], gt["masks"], class_id)
         result = predictions[image_id]
@@ -269,21 +315,16 @@ def evaluate_instance_siou(
         )
         total_tp += int(np.count_nonzero(values["pred_is_tp"]))
         total_fp += int(np.count_nonzero(values["pred_is_fp"]))
-        total_detected += int(np.count_nonzero(values["gt_is_detected"]))
         total_fn += int(np.count_nonzero(values["gt_is_fn"]))
         total_gt += gt_masks.shape[-1]
 
-    num_predictions = total_tp + total_fp
-    precision = total_tp / num_predictions if num_predictions else 0.0
-    recall = total_detected / total_gt if total_gt else 0.0
+    precision, recall, f1 = precision_recall_f1(total_tp, total_fp, total_fn)
     return {
-        "precision": precision, "recall": recall,
-        "f1": harmonic_mean(precision, recall),
+        "precision": precision, "recall": recall, "f1": f1,
         "true_positive_predictions": total_tp,
         "false_positive_predictions": total_fp,
-        "detected_ground_truths": total_detected,
         "false_negative_ground_truths": total_fn,
-        "num_predictions": num_predictions,
+        "num_predictions": total_tp + total_fp,
         "num_ground_truths": total_gt,
     }
 

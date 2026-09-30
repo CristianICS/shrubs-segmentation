@@ -132,8 +132,76 @@ def _wrap_forward_no_grad(module: torch.nn.Module) -> None:
     module.forward = forward_no_grad
 
 
+# In-loop checkpoint selection on the JuniperMapper Photo Interpretation Val
+# split: the epoch with the highest COCO mask AP50 is copied to
+# `<save_dir>/model_best.pt`, matching Detectron2's `segm/AP50` and
+# Matterport's mask AP50 selection. Mask mAP50:95 only breaks exact ties, and
+# a strictly-greater comparison keeps the earliest epoch among equal scores.
+BEST_CHECKPOINT_NAME = "model_best"
+SELECTION_METER_PREFIX = "Meters_train/val_shrubs_val/segmentation/"
+SELECTION_METRIC = "coco_eval_segm_AP_50"
+TIE_BREAK_METRIC = "coco_eval_segm_AP"
+
+
 class FrozenBackboneTrainer(_Sam3Trainer):
     """SAM 3 trainer that freezes both pretrained backbones before AdamW."""
+
+    def _log_meters_and_save_best_ckpts(self, phases):
+        # Upstream `save_best_meters` only acts on meters that define
+        # `is_better`, which SAM 3's PredictionDumper doesn't, so it never
+        # saves a best checkpoint for COCO AP meters. Select one here instead.
+        out_dict = super()._log_meters_and_save_best_ckpts(phases)
+        if "val" in phases:
+            self._save_best_mask_checkpoint(out_dict)
+        return out_dict
+
+    def _save_best_mask_checkpoint(self, out_dict: dict[str, float]) -> None:
+        ap50 = out_dict.get(SELECTION_METER_PREFIX + SELECTION_METRIC)
+        if ap50 is None:
+            # Non-zero ranks only receive a placeholder from PredictionDumper.
+            if self.distributed_rank == 0:
+                logging.warning(
+                    "FrozenBackboneTrainer: %s missing from the validation "
+                    "meters; no best checkpoint was selected this epoch.",
+                    SELECTION_METRIC,
+                )
+            return
+        ap = out_dict[SELECTION_METER_PREFIX + TIE_BREAK_METRIC]
+
+        # Stored in `best_meter_values` so it is saved inside every checkpoint
+        # and restored when training resumes.
+        best = (
+            self.best_meter_values.get(f"{BEST_CHECKPOINT_NAME}/{SELECTION_METRIC}"),
+            self.best_meter_values.get(f"{BEST_CHECKPOINT_NAME}/{TIE_BREAK_METRIC}"),
+        )
+        if best[0] is not None and (ap50, ap) <= best:
+            return
+
+        # `self.epoch` is 0-based; checkpoints are numbered by completed epochs.
+        epoch = self.epoch + 1
+        self.best_meter_values.update({
+            f"{BEST_CHECKPOINT_NAME}/epoch": epoch,
+            f"{BEST_CHECKPOINT_NAME}/{SELECTION_METRIC}": ap50,
+            f"{BEST_CHECKPOINT_NAME}/{TIE_BREAK_METRIC}": ap,
+        })
+        self.save_checkpoint(epoch, [BEST_CHECKPOINT_NAME])
+
+        if self.distributed_rank == 0:
+            summary_path = Path(self.checkpoint_conf.save_dir) / f"{BEST_CHECKPOINT_NAME}.json"
+            with summary_path.open("w", encoding="utf-8") as destination:
+                json.dump({
+                    "epoch": epoch,
+                    "validation_split": "JuniperMapper Photo Interpretation Val",
+                    "checkpoint_selection_metric": f"mask_AP50 ({SELECTION_METRIC})",
+                    "tie_break_metric": f"mask_mAP_50_95 ({TIE_BREAK_METRIC})",
+                    "mask_AP50": ap50,
+                    "mask_mAP_50_95": ap,
+                }, destination, indent=2)
+            logging.info(
+                "FrozenBackboneTrainer: new best mask AP50 %.4f (mAP50:95 %.4f) "
+                "at epoch %d -> %s.pt",
+                ap50, ap, epoch, BEST_CHECKPOINT_NAME,
+            )
 
     def _setup_components(self) -> None:
         # `super()._setup_components()` builds `self.model` and immediately

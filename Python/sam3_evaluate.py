@@ -34,7 +34,7 @@ from PIL import Image
 from pycocotools import mask as mask_utils
 
 sys.path.append(str(Path(Path(__file__).absolute().parent.parent, 'bin')))
-from shrubs_common import Prediction, PredictionCache, run_predictor
+from shrubs_common import METRIC_DEFINITIONS, Prediction, PredictionCache, run_predictor
 from shrubs_common.plotting import run_evaluation_report
 from shrubs_sam3 import TextPromptPredictor, build_processor, sam3_autocast
 
@@ -88,8 +88,17 @@ def parse_args() -> argparse.Namespace:
         default=0.50,
         help="Confidence threshold used for the standalone pixel evaluation.",
     )
+    parser.add_argument(
+        "--iou-metric-definition",
+        choices=METRIC_DEFINITIONS,
+        default="standard",
+        help=(
+            "IoU counting: 'standard' (COCO-style one-to-one matching) or 'paper' "
+            "(Khaldi et al. 2024 independent best matches, recall = TP / (TP + FN))."
+        ),
+    )
     parser.add_argument("--minimum-intersection-pixels", type=int, default=1)
-    parser.add_argument("--show-plots", action="store_true")
+    parser.add_argument("--show-plots", action="store_true", help="Also open each saved F1 figure in a window.")
     return parser.parse_args()
 
 

@@ -122,20 +122,20 @@
   },
   "random_seed": 20260803,
   "dataset_partition": "JunipperMapper_train_val_partition",
-  "best_checkpoint_epoch": 18,
+  "best_checkpoint_epoch": 20,
   "best_checkpoint_path": "phase3_resnet50_seed20260803_20260816T204953/best_validation_map_checkpoint.h5",
   "validation_metrics": {
-    "checkpoint_selection_metric": "mean_per_image_mask_mAP_50_95",
-    "mask_mAP_50_95": 0.6157326873605483,
-    "mask_AP50": 0.8667273691027824,
-    "mask_AP75": 0.7136903095284607,
+    "checkpoint_selection_metric": "mean_per_image_mask_AP50",
+    "mask_mAP_50_95": 0.5989143746967985,
+    "mask_AP50": 0.8705589173887381,
+    "mask_AP75": 0.7023257600695056,
     "confidence_selection_metric": "maximum_validation_F1_at_mask_IoU_0.50",
     "selected_confidence_threshold": 0.8500000000000001,
-    "precision": 0.8531468531468531,
-    "recall": 0.7393939393939394,
-    "f1": 0.7922077922077921,
-    "true_positives": 488,
-    "false_positives": 84,
-    "false_negatives": 172
+    "precision": 0.8687050359712231,
+    "recall": 0.7318181818181818,
+    "f1": 0.7944078947368421,
+    "true_positives": 483,
+    "false_positives": 73,
+    "false_negatives": 177
   }
 }

@@ -332,36 +332,3 @@ def process_input(
                 tile_size, overlap, min_area, nms_iou, overwrite, progress,
             ))
     return results
-
-
-def process_folder(
-    input_folder: Path,
-    output_folder: Path,
-    prompt: str,
-    confidence: float,
-    rgb_bands: tuple[int, int, int],
-    tile_size: int,
-    overlap: int,
-    min_area: int = 0,
-    nms_iou: float = 1.0,
-    checkpoint: Path | None = None,
-    overwrite: bool = False,
-    progress: Callable[[str], None] = print,
-) -> list[dict[str, int | Path]]:
-    """Backward-compatible wrapper for processing a folder of GeoTIFFs."""
-    if not input_folder.is_dir():
-        raise NotADirectoryError(f"Input path is not a folder: {input_folder}")
-    return process_input(
-        input_path=input_folder,
-        output_folder=output_folder,
-        prompt=prompt,
-        confidence=confidence,
-        rgb_bands=rgb_bands,
-        tile_size=tile_size,
-        overlap=overlap,
-        min_area=min_area,
-        nms_iou=nms_iou,
-        checkpoint=checkpoint,
-        overwrite=overwrite,
-        progress=progress,
-    )

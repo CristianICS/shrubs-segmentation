@@ -10,7 +10,7 @@ import os
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 from .utils import (
-    TextPromptPredictor, build_processor, parse_rgb_bands, process_folder, process_input, sam3_autocast,
+    TextPromptPredictor, build_processor, parse_rgb_bands, process_input, sam3_autocast,
 )
 from .training import FrozenBackboneTrainer, prepare_juniper_coco
 
@@ -20,7 +20,6 @@ __all__ = [
     "build_processor",
     "parse_rgb_bands",
     "prepare_juniper_coco",
-    "process_folder",
     "process_input",
     "sam3_autocast",
 ]

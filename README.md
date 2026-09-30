@@ -6,7 +6,7 @@ Models used:
 
 - Matterport Mask R-CNN with hyperparameter tunning via three steps experiment;
 - Detectron2 Mask R-CNN architecture with hyperparamenters proposed by [Khaldi et al. 2024](https://doi.org/10.1016/j.jag.2024.104191)
-- SAM3 model using zero-learning and few-shots classification
+- SAM 3 model, both zero-shot and domain-adapted (frozen-backbone fine-tuning on JuniperMapper)
 
 ## Data
 
@@ -85,7 +85,7 @@ python Python/matterport_convert_annotations.py
 
 The code creates a custom `json` file with the valid format inside the `JuniperMapper` folder, without removing or updating any of the original files. Then, use `Notebooks/shrubs_train_experiments.ipynb` notebook to train the model. It runs a sequential, three-phase testing design instead of a full hyperparameter grid, which would be costly and more likely to pick a configuration that only looks good by chance.
 
-Phase A compares training methods (heads-only vs. staged fine-tuning, with and without geometric augmentation), Phase B tunes the learning rate on top of the winning Phase A setup, and Phase C compares the ResNet-50 backbone against the ResNet-101 baseline using the winning Phase A+B setup. After each phase, every candidate is evaluated on the validation split and the one with the highest mask mAP (IoU 0.50–0.95) is preserved. The final winning configuration, its training schedule, augmentation choice, and validation metrics (mask mAP, AP50, AP75, confidence threshold, F1) are saved to `data/logs/matterport/best_model_configuration.json`.
+Phase A compares training methods (heads-only vs. staged fine-tuning, with and without geometric augmentation), Phase B tunes the learning rate on top of the winning Phase A setup, and Phase C compares the ResNet-50 backbone against the ResNet-101 baseline using the winning Phase A+B setup. Every epoch's checkpoint is evaluated on the Photo Interpretation validation split, and the one with the highest mask AP50 is kept as the run's best checkpoint (ties broken by mask mAP50:95, then the earliest epoch). After each phase, the candidate with the highest mask AP50 is preserved. This is the same criterion used for Detectron2 and SAM 3. The final winning configuration, its training schedule, augmentation choice, and validation metrics (mask mAP, AP50, AP75, confidence threshold, F1) are saved to `data/logs/matterport/best_model_configuration.json`.
 
 ### Validation metrics
 
@@ -281,7 +281,7 @@ python Python/detectron2_convert_annotations.py ^
   --output-json data/.../Test/Annotations/Test.json
 ```
 
-Then, train the model following the parameters used by Khaldi et al. 2024, using the training set to optimize model weights and the validation set to select checkpoint and optionally tune training configuration. Inside the WSL environment run:
+Then, train the model following the parameters used by Khaldi et al. 2024, using the training set to optimize model weights and the validation set to select checkpoint and optionally tune training configuration. Every two epochs the masks are evaluated on the Photo Interpretation validation split, and the checkpoint with the highest mask AP50 (`segm/AP50`) is saved as `model_best.pth`, the same criterion used for Matterport and SAM 3. Inside the WSL environment run:
 
 ```bash
 python Python/detectron2_shrubs_train.py
@@ -341,7 +341,7 @@ For each image it writes a binary shrub mask (`*_shrubs.png`), a per-pixel confi
 
 ## SAM 3
 
-The Segment Anything Model 3 (SAM 3) developed by Meta is used to test its zero-shot accuracy on shrub segmentation, i.e., running the pretrained foundation checkpoint with a text prompt and no shrub-specific fine-tuning; but also its few-shot classification schema using the JuniperMapper dataset to fine tunning the model.
+The Segment Anything Model 3 (SAM 3) developed by Meta is used to test its zero-shot accuracy on shrub segmentation, i.e., running the pretrained foundation checkpoint with a text prompt and no shrub-specific fine-tuning. It is then domain-adapted by fine-tuning its decoder heads on the full JuniperMapper training split, with the vision and language backbones kept frozen.
 
 ### Installation
 
@@ -442,34 +442,25 @@ hf auth login
 
 ### Training the model
 
-The code `Python/sam3_domain_adapt.py` compares the zero-shots approachs with the model fine tunning using the shrubs inside JuniperMapper dataset. Zero-shot tends to over-segmentate, so this approach aims to fine-tunes only SAM 3's transformer/detection/segmentation head on JuniperMapper, with both the vision and language backbones frozen (`shrubs_sam3.training.FrozenBackboneTrainer`), so the trainable parameter count stays small relative to the dataset:
+The code `Python/sam3_domain_adapt.py` performs the domain adaptation using all the shrubs in the JuniperMapper training split. Zero-shot SAM 3 tends to over-segment, so this approach fine-tunes only SAM 3's transformer/detection/segmentation head on JuniperMapper, with both the vision and language backbones frozen (`shrubs_sam3.training.FrozenBackboneTrainer`), so the trainable parameter count stays small relative to the dataset:
 
 ```bash
 python Python/sam3_domain_adapt.py \
   --output data/logs/sam3/domain_adapt --max-epochs 30
 ```
 
-By default it trains on the JuniperMapper Photo Interpretation Train split and validates on its Val split (override with `--train-json`/`--train-images`/`--val-json`/`--val-images`); `--batch-size`, `--num-workers`, `--checkpoint-freq`, and `--device` cover the rest of the common tuning knobs (`python Python/sam3_domain_adapt.py --help` for the full list). Pass `--checkpoint` (the same local release checkpoint file `sam3_deploy.py`/`sam3_evaluate.py` take) to start training from an already-downloaded checkpoint instead of re-downloading the gated one from Hugging Face. It writes `checkpoint.pt` (latest epoch), periodic `checkpoint_<N>.pt` snapshots, and a `val_shrubs_val_detection_<metric>.pt` snapshot whenever that bbox metric (e.g. AP, AP50) improves, all under `<output>/checkpoints`. None of these is chosen automatically as the model to deploy. That in-loop meter only tracks box AP, not mask quality. So the produced checkpoints were compared using `sam3_evaluate.py`'s instance-IoU/S-IoU metrics:
+By default it trains on the JuniperMapper Photo Interpretation Train split and validates on its Val split (override with `--train-json`/`--train-images`/`--val-json`/`--val-images`); `--batch-size`, `--num-workers`, `--checkpoint-freq`, and `--device` cover the rest of the common tuning knobs (`python Python/sam3_domain_adapt.py --help` for the full list). Pass `--checkpoint` (the same local release checkpoint file `sam3_deploy.py`/`sam3_evaluate.py` take) to start training from an already-downloaded checkpoint instead of re-downloading the gated one from Hugging Face. After every epoch the predicted masks are scored on the Photo Interpretation Val split with the COCO mask metrics. The checkpoint with the highest mask AP50 (ties broken by mask mAP50:95, then the earliest epoch) is saved as `model_best.pt`, and its scores and epoch are written to `model_best.json`. This is the same criterion used for Detectron2 and Matterport. Box AP is also logged for reference, but it isn't used for the selection. The script also writes `checkpoint.pt` (latest epoch) and periodic `checkpoint_<N>.pt` snapshots, all under `<output>/checkpoints`.
 
-```bash
-python Python/sam3_evaluate.py \
-  --checkpoint data/logs/sam3/domain_adapt/checkpoints/checkpoint.pt \
-  --dataset shrubs_test_fw \
-    data/JuniperMapper/Field_Work_Data/External_Val_Data/Annotations/Val.json \
-    data/JuniperMapper/Field_Work_Data/External_Val_Data/Images \
-  --output-dir results/evaluation/model_sam3/domain_adapted
-```
-
-Repeat against each candidate checkpoint.
+> Use a new `--output` folder for each training run. If `<output>/checkpoints/checkpoint.pt` already exists, training resumes from it instead of starting again.
 
 ### Run inference
 
-Use the `Python/sam3_deploy.py` CLI to predict the shrubs in the study area by pointing `--checkpoint` at the one yielding the best F1 score (`build_processor` auto-detects a fine-tuned checkpoint vs. an official release one). The script tiles a GeoTIFF (or every GeoTIFF in a folder), runs SAM 3 with a text prompt on each tile, and stitches the results back into georeferenced outputs:
+Use the `Python/sam3_deploy.py` CLI to predict the shrubs in the study area by pointing `--checkpoint` at `model_best.pt` (`build_processor` auto-detects a fine-tuned checkpoint vs. an official release one). The script tiles a GeoTIFF (or every GeoTIFF in a folder), runs SAM 3 with a text prompt on each tile, and stitches the results back into georeferenced outputs:
 
 ```bash
 python Python/sam3_deploy.py data/rasters/orthomosaic_clip.tif \
   --output results/deployment/tile_masks/sam3/shrub --prompt shrub \
-  --checkpoint data/logs/sam3/domain_adapt/checkpoints/<checkpoint>.pt
+  --checkpoint data/logs/sam3/domain_adapt/checkpoints/model_best.pt
 ```
 
 The model has been run with the following prompts to compare semantically similar prompts while keeping all other settings fixed:

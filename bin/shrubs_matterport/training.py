@@ -961,7 +961,7 @@ def select_best_experiment(
             continue
 
         metrics = metadata.get("validation_metrics") or {}
-        if "mask_mAP_50_95" not in metrics:
+        if "mask_AP50" not in metrics:
             continue
 
         previous = latest_by_name.get(name)
@@ -982,10 +982,11 @@ def select_best_experiment(
 
     return max(
         records,
+        # Same criterion as the per-run checkpoint selection: mask AP50,
+        # with mask mAP50:95 as the tie-break.
         key=lambda item: (
-            item["validation_metrics"]["mask_mAP_50_95"],
-            item["validation_metrics"]["mask_AP75"],
             item["validation_metrics"]["mask_AP50"],
+            item["validation_metrics"]["mask_mAP_50_95"],
         ),
     )
 
