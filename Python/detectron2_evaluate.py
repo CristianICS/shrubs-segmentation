@@ -33,7 +33,7 @@ python evaluate_detectron2.py ^
   --dataset shrubs_test_fw ^
     ./JuniperMapper/Field_Work_Data/External_Val_Data/Annotations/Val.json ^
     ./JuniperMapper/Field_Work_Data/External_Val_Data/Images ^
-  --output-dir ./project/results/evaluation/model_detectron2
+  --output-dir ./results/evaluation/model_detectron2
 """
 from __future__ import annotations
 

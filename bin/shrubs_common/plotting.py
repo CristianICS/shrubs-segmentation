@@ -19,10 +19,16 @@ from .metrics import (
 )
 
 
-def plot_performance(csv_files: Mapping[float, Mapping[str, Path]], out_dir: Path, show: bool) -> None:
+def plot_performance(
+    csv_files: Mapping[float, Mapping[str, Path]],
+    out_dir: Path,
+    show: bool,
+    file_prefix: str = "evaluation",
+) -> None:
     """Save one F1-vs-confidence figure per evaluation threshold.
 
-    Without `show`, use the non-GUI Agg backend so saving never depends on a
+    Figures are written as `<file_prefix>_threshold_<pct>.png`, so plots built
+    from different IoU definitions can share one folder. Without `show`, use the non-GUI Agg backend so saving never depends on a
     Qt/Tk toolkit. With `show`, keep matplotlib's default backend so each
     figure opens in a window (matplotlib falls back to Agg with a warning
     when no display is available).
@@ -46,7 +52,7 @@ def plot_performance(csv_files: Mapping[float, Mapping[str, Path]], out_dir: Pat
         ax.set_xlim(0, 100); ax.set_ylim(0, 100)
         ax.set_xticks(range(0, 101, 20)); ax.set_yticks(range(0, 101, 20))
         ax.grid(alpha=0.25); ax.legend(title="Evaluation metric"); fig.tight_layout()
-        output = out_dir / f"evaluation_threshold_{percent}.png"
+        output = out_dir / f"{file_prefix}_threshold_{percent}.png"
         fig.savefig(output, dpi=300, bbox_inches="tight")
         if show: plt.show()
         plt.close(fig)
@@ -66,11 +72,16 @@ def run_evaluation_report(
     `--evaluation-thresholds`, `--iou-metric-definition`,
     `--minimum-intersection-pixels`, and `--show-plots` flags.
 
-    The paper IoU definition writes `iou_paper_threshold_<pct>.csv` so its
-    results never overwrite the standard `iou_threshold_<pct>.csv`.
+    Every file goes flat into `output_dir`. The paper IoU definition writes
+    `iou_paper_threshold_<pct>.csv` and `evaluation_paper_threshold_<pct>.png`
+    so its results never overwrite the standard `iou_threshold_<pct>.csv` and
+    `evaluation_threshold_<pct>.png`. S-IoU does not depend on the IoU
+    definition, so `siou_threshold_<pct>.csv` is shared by both.
     """
-    iou_prefix = "iou_paper" if args.iou_metric_definition == "paper" else "iou"
-    iou_label = "IoU (paper)" if args.iou_metric_definition == "paper" else "IoU"
+    is_paper = args.iou_metric_definition == "paper"
+    iou_prefix = "iou_paper" if is_paper else "iou"
+    iou_label = "IoU (paper)" if is_paper else "IoU"
+    plot_prefix = "evaluation_paper" if is_paper else "evaluation"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     pixel = evaluate_pixel_metrics(
@@ -113,4 +124,4 @@ def run_evaluation_report(
         )
         plot_inputs[evaluation_threshold] = {iou_label: iou_csv, "S-IoU": siou_csv}
 
-    plot_performance(plot_inputs, output_dir, args.show_plots)
+    plot_performance(plot_inputs, output_dir, args.show_plots, file_prefix=plot_prefix)

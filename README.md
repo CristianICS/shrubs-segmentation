@@ -302,6 +302,7 @@ python Python/detectron2_evaluate.py \
   --dataset shrubs_test_fw \
     data/JuniperMapper/Field_Work_Data/External_Val_Data/Annotations/Val.json \
     data/JuniperMapper/Field_Work_Data/External_Val_Data/Images \
+  --iou-metric-definition paper \
   --output-dir ./results/evaluation/model_detectron2
 ```
 
