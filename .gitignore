@@ -8,8 +8,7 @@ data/spectral_signatures
 data/rasters
 data/point_cloud
 data/encinacorba_fire.zip
-Notebooks/*.csv
-Notebooks/*.png
+Notebooks/
 paper/
 /Python/**/__pycache__/
 R/.Rhistory
@@ -21,6 +20,7 @@ results/evaluation/deployment_accuracy/**
 !results/evaluation/deployment_accuracy/summary.csv
 results/evaluation/lidar/**
 !results/evaluation/lidar/comparative_stats.csv
+!results/evaluation/lidar/target_errors.csv
 !results/evaluation/lidar/mask_height_stats.csv
 results/lidar_refined/**
 !results/lidar_refined/README.md
