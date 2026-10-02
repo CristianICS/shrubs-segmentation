@@ -6,13 +6,13 @@ example SAM 3's in-tile NMS at inference time) do not pull in matplotlib.
 """
 from __future__ import annotations
 
-import argparse
 import csv
 from pathlib import Path
 from typing import Mapping
 
 from matplotlib import pyplot as plt
 
+from .evaluation import EvaluationSettings
 from .metrics import (
     PredictionCache, confidence_thresholds, evaluate_instance_iou, evaluate_instance_siou,
     evaluate_pixel_metrics, validate_probability, write_sweep,
@@ -63,14 +63,12 @@ def run_evaluation_report(
     ground_truths: PredictionCache,
     predictions: PredictionCache,
     output_dir: Path,
-    args: argparse.Namespace,
+    settings: EvaluationSettings,
 ) -> None:
     """Compute and save pixel/IoU/S-IoU metrics and F1-vs-confidence plots.
 
-    Shared by `detectron2_evaluate.py` and `sam3_evaluate.py`, which both expose
-    the same `--class-id`, `--pixel-confidence`, `--confidence-thresholds`,
-    `--evaluation-thresholds`, `--iou-metric-definition`,
-    `--minimum-intersection-pixels`, and `--show-plots` flags.
+    Shared by `detectron2_evaluate.py` and `sam3_evaluate.py`, which both pass
+    the same `EvaluationSettings` from `shrubs_common.evaluation`.
 
     Every file goes flat into `output_dir`. The paper IoU definition writes
     `iou_paper_threshold_<pct>.csv` and `evaluation_paper_threshold_<pct>.png`
@@ -78,25 +76,25 @@ def run_evaluation_report(
     `evaluation_threshold_<pct>.png`. S-IoU does not depend on the IoU
     definition, so `siou_threshold_<pct>.csv` is shared by both.
     """
-    is_paper = args.iou_metric_definition == "paper"
+    is_paper = settings.iou_metric_definition == "paper"
     iou_prefix = "iou_paper" if is_paper else "iou"
     iou_label = "IoU (paper)" if is_paper else "IoU"
     plot_prefix = "evaluation_paper" if is_paper else "evaluation"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     pixel = evaluate_pixel_metrics(
-        ground_truths, predictions, class_id=args.class_id,
-        confidence_threshold=args.pixel_confidence,
+        ground_truths, predictions, class_id=settings.class_id,
+        confidence_threshold=settings.pixel_confidence,
     )
     print(
-        f"Pixel metrics at confidence {args.pixel_confidence:.2f}: "
+        f"Pixel metrics at confidence {settings.pixel_confidence:.2f}: "
         f"P={pixel['precision']:.4f}, R={pixel['recall']:.4f}, F1={pixel['f1']:.4f}, "
         f"TP={pixel['tp_pixels']}, FP={pixel['fp_pixels']}, FN={pixel['fn_pixels']}"
     )
 
-    thresholds = confidence_thresholds(args.confidence_thresholds)
+    thresholds = confidence_thresholds(settings.confidence_thresholds)
     plot_inputs: dict[float, dict[str, Path]] = {}
-    for evaluation_threshold in args.evaluation_thresholds:
+    for evaluation_threshold in settings.evaluation_thresholds:
         evaluation_threshold = validate_probability(
             evaluation_threshold, "evaluation threshold", allow_zero=False
         )
@@ -108,20 +106,20 @@ def run_evaluation_report(
             iou_csv, metric_name="IoU", evaluation_threshold=evaluation_threshold,
             thresholds=thresholds,
             evaluator=lambda confidence, t=evaluation_threshold: evaluate_instance_iou(
-                ground_truths, predictions, class_id=args.class_id,
+                ground_truths, predictions, class_id=settings.class_id,
                 confidence_threshold=confidence, iou_threshold=t,
-                metric_definition=args.iou_metric_definition,
+                metric_definition=settings.iou_metric_definition,
             ),
         )
         write_sweep(
             siou_csv, metric_name="S-IoU", evaluation_threshold=evaluation_threshold,
             thresholds=thresholds,
             evaluator=lambda confidence, t=evaluation_threshold: evaluate_instance_siou(
-                ground_truths, predictions, class_id=args.class_id,
+                ground_truths, predictions, class_id=settings.class_id,
                 confidence_threshold=confidence, siou_threshold=t,
-                minimum_intersection_pixels=args.minimum_intersection_pixels,
+                minimum_intersection_pixels=settings.minimum_intersection_pixels,
             ),
         )
         plot_inputs[evaluation_threshold] = {iou_label: iou_csv, "S-IoU": siou_csv}
 
-    plot_performance(plot_inputs, output_dir, args.show_plots, file_prefix=plot_prefix)
+    plot_performance(plot_inputs, output_dir, settings.show_plots, file_prefix=plot_prefix)

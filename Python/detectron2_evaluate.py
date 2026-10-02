@@ -1,6 +1,10 @@
 """
 Evaluate a Detectron2 Mask R-CNN model on COCO-format shrub datasets.
 
+Run it with `python Python/detectron2_evaluate.py`. The weights path and model
+config are set at the top of this file; the test splits and evaluation settings
+are shared with `sam3_evaluate.py` through `shrubs_common.evaluation`.
+
 Images are resized using Detectron2's configured test transformation.
 Predicted masks and boxes are returned in the original image coordinate
 system before comparison with the ground-truth annotations.
@@ -9,7 +13,7 @@ The script computes:
 
 * micro-averaged pixel precision, recall, and F1;
 * mask-IoU instance precision, recall, and F1, with standard one-to-one
-  matching or the Khaldi et al. (2024) definition (`--iou-metric-definition`);
+  matching or the Khaldi et al. (2024) definition (`iou_metric_definition`);
 * directional S-IoU metrics as defined by Khaldi et al. (2024);
 * confidence-threshold sweeps saved as CSV files; and
 * F1-versus-confidence plots.
@@ -21,120 +25,61 @@ or geometrically augment them in this script.
 The metric primitives (pixel/instance/S-IoU scoring, confidence sweeps, and
 plotting) live in `shrubs_common` and are shared with `sam3_evaluate.py`, so
 both models are scored identically on the same JuniperMapper splits.
-
-
-Example usage:
-
-python evaluate_detectron2.py ^
-  --weights model_final.pth ^
-  --dataset shrubs_test_pi ^
-    ./JuniperMapper/Photo_Interpretation_Data/Test/Annotations/Test.json ^
-    ./JuniperMapper/Photo_Interpretation_Data/Test/Images ^
-  --dataset shrubs_test_fw ^
-    ./JuniperMapper/Field_Work_Data/External_Val_Data/Annotations/Val.json ^
-    ./JuniperMapper/Field_Work_Data/External_Val_Data/Images ^
-  --output-dir ./results/evaluation/model_detectron2
 """
 from __future__ import annotations
 
-import argparse
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
 
-from detectron2.data import DatasetCatalog, MetadataCatalog
-from detectron2.data.detection_utils import annotations_to_instances, read_image
+# Catch a wrong environment
+try:
+    from detectron2.data import DatasetCatalog, MetadataCatalog
+    from detectron2.data.detection_utils import annotations_to_instances, read_image
+except ImportError as e:
+    raise ImportError(
+        "Detectron2 is not installed in the active Python environment. "
+        "Activate the Detectron2 environment before running this script."
+    ) from e
 
 sys.path.append(str(Path(Path(__file__).absolute().parent.parent, 'bin')))
-from shrubs_common import METRIC_DEFINITIONS, run_predictor
+from shrubs_common import (
+    TEST_DATASETS, EvaluationDataset, EvaluationSettings, check_dataset_inputs, run_predictor,
+)
 from shrubs_common.plotting import run_evaluation_report
 from shrubs_detectron import ScaleMatchedPredictor, build_inference_cfg, inspect_dataset, register_juniper_dataset
 
+# Store the project base directory
+ROOT = Path(__file__).resolve().parent.parent
 
-@dataclass(frozen=True)
-class DatasetSpec:
-    name: str
-    json_file: Path
-    image_root: Path
+WEIGHTS = ROOT / "data" / "logs" / "detectron2" / "model_best.pth"
+OUTPUT_DIR = ROOT / "results" / "evaluation" / "model_detectron2"
+
+# Same architecture used in detectron2_shrubs_train.py
+CONFIG = "COCO-InstanceSegmentation/mask_rcnn_R_101_C4_3x.yaml"
+NUM_CLASSES = 1
+
+# Shared with sam3_evaluate.py; override a field here only for a one-off run,
+# e.g. EvaluationSettings(iou_metric_definition="standard")
+SETTINGS = EvaluationSettings()
+DEVICE = None  # None -> CUDA if available, otherwise CPU
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Evaluate a Detectron2 Mask R-CNN model using the "
-            "same test resizing configured during training."
+def check_inputs() -> None:
+    """Fail early if the weights or any test split are missing."""
+    check_dataset_inputs(TEST_DATASETS)
+
+    if not WEIGHTS.is_file():
+        raise FileNotFoundError(
+            f"Detectron2 weights not found at '{WEIGHTS}'. "
+            "Run 'detectron2_shrubs_train.py' first, or copy the trained "
+            "'model_best.pth' checkpoint into 'data/logs/detectron2'."
         )
-    )
-
-    parser.add_argument(
-        "--weights",
-        type=Path,
-        required=True,
-        help="Path to the trained Detectron2 .pth checkpoint.",
-    )
-    parser.add_argument(
-        "--config",
-        default="COCO-InstanceSegmentation/mask_rcnn_R_101_C4_3x.yaml",
-        help="Detectron2 model-zoo config name or a local YAML path.",
-    )
-    parser.add_argument("--num-classes", type=int, default=1)
-    parser.add_argument(
-        "--dataset",
-        action="append",
-        nargs=3,
-        metavar=("NAME", "COCO_JSON", "IMAGE_ROOT"),
-        required=True,
-        help=(
-            "Dataset definition. Repeat for multiple test sets, for example: "
-            "--dataset shrubs_test_pi annotations.json Images"
-        ),
-    )
-    parser.add_argument("--output-dir", type=Path, default=Path("results/evaluation"))
-    parser.add_argument(
-        "--class-id",
-        type=int,
-        default=0,
-        help="Detectron2 contiguous class ID. One-class COCO datasets normally use 0.",
-    )
-    parser.add_argument(
-        "--confidence-thresholds",
-        type=float,
-        nargs="*",
-        default=None,
-        help="Threshold sweep. Default: 0.00, 0.05, ..., 1.00.",
-    )
-    parser.add_argument(
-        "--evaluation-thresholds",
-        type=float,
-        nargs="+",
-        default=(0.50, 0.75),
-        help="IoU and S-IoU thresholds.",
-    )
-    parser.add_argument(
-        "--pixel-confidence",
-        type=float,
-        default=0.50,
-        help="Confidence threshold used for the standalone pixel evaluation.",
-    )
-    parser.add_argument(
-        "--iou-metric-definition",
-        choices=METRIC_DEFINITIONS,
-        default="standard",
-        help=(
-            "IoU counting: 'standard' (COCO-style one-to-one matching) or 'paper' "
-            "(Khaldi et al. 2024 independent best matches, recall = TP / (TP + FN))."
-        ),
-    )
-    parser.add_argument("--minimum-intersection-pixels", type=int, default=1)
-    parser.add_argument("--device", choices=("cuda", "cpu"), default=None)
-    parser.add_argument("--show-plots", action="store_true", help="Also open each saved F1 figure in a window.")
-    return parser.parse_args()
 
 
-def register_dataset(spec: DatasetSpec) -> None:
+def register_dataset(spec: EvaluationDataset) -> None:
     if spec.name in DatasetCatalog.list():
         DatasetCatalog.remove(spec.name)
         MetadataCatalog.remove(spec.name)
@@ -147,10 +92,17 @@ def register_dataset(spec: DatasetSpec) -> None:
 
 
 def load_ground_truth(record: Mapping[str, Any]) -> dict[str, np.ndarray]:
-    """Return one COCO record's boxes, contiguous class IDs, and masks as a Prediction dict."""
+    """
+    Return one COCO record's boxes, contiguous class IDs, and masks as
+    a Prediction dict.
+    """
     height = int(record["height"])
     width = int(record["width"])
-    annotations = [ann for ann in record.get("annotations", []) if ann.get("iscrowd", 0) == 0]
+    annotations = [
+        ann
+        for ann in record.get("annotations", [])
+        if ann.get("iscrowd", 0) == 0
+    ]
 
     if not annotations:
         return {
@@ -180,39 +132,42 @@ def _read_checked_image(record: Mapping[str, Any], predictor: ScaleMatchedPredic
 
 def evaluate_dataset(
     predictor: ScaleMatchedPredictor,
-    spec: DatasetSpec,
-    args: argparse.Namespace,
+    spec: EvaluationDataset
 ) -> None:
     records = DatasetCatalog.get(spec.name)
-    ground_truths = {int(record["image_id"]): load_ground_truth(record) for record in records}
+    
+    ground_truths = {
+        int(record["image_id"]): load_ground_truth(record)
+        for record in records    
+    }
 
     print(f"\nDataset: {spec.name} ({len(records)} images)")
-    predictions = run_predictor(predictor, records, lambda record: _read_checked_image(record, predictor))
-    run_evaluation_report(ground_truths, predictions, args.output_dir / spec.name, args)
+    predictions = run_predictor(
+        predictor,
+        records,
+        lambda record: _read_checked_image(record, predictor)
+    )
+
+    run_evaluation_report(
+        ground_truths,
+        predictions,
+        OUTPUT_DIR / spec.name,
+        SETTINGS
+    )
 
 
 def main() -> None:
-    args = parse_args()
-    if not args.weights.is_file():
-        raise FileNotFoundError(f"Weights file not found: {args.weights}")
+    check_inputs()
 
-    specs = [
-        DatasetSpec(name=name, json_file=Path(json_file), image_root=Path(image_root))
-        for name, json_file, image_root in args.dataset
-    ]
-    for spec in specs:
+    for spec in TEST_DATASETS:
         register_dataset(spec)
-
-    for spec in specs:
         inspect_dataset(spec.name)
 
     predictor = ScaleMatchedPredictor(
-        build_inference_cfg(
-            args.weights, config=args.config, num_classes=args.num_classes, device=args.device,
-        )
+        build_inference_cfg(WEIGHTS, config=CONFIG, num_classes=NUM_CLASSES, device=DEVICE)
     )
-    for spec in specs:
-        evaluate_dataset(predictor, spec, args)
+    for spec in TEST_DATASETS:
+        evaluate_dataset(predictor, spec)
 
 
 if __name__ == "__main__":

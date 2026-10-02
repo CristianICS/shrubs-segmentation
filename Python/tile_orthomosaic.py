@@ -3,7 +3,7 @@ Pre-tile a GeoTIFF orthomosaic into overlapping RGB windows for deployment
 scripts that cannot use rasterio directly.
 
 Detectron2 and SAM 3 tile the orthomosaic internally at inference time (see
-`detectron2_deploy.py`, `bin/shrubs_sam3/utils.py`), since their environments
+`detectron2_deploy.py`, `sam3_deploy.py`), since their environments
 can use rasterio directly. Matterport's `mrcnn_tf2` conda env cannot: it has
 a Windows DLL conflict between its old TensorFlow/Keras stack and GDAL.
 So for Matterport only, this script does the windowed
@@ -13,12 +13,15 @@ GDAL needed to read it) plus a `<stem>_r<row>_c<col>.json` sidecar carrying
 that window's affine transform and CRS -- `matterport_deploy.py` then reads
 these with PIL and the pure-Python `affine` package instead.
 
-Example usage:
+Example usage (inside the `mrcnn_masks` environment):
 
-python tile_orthomosaic.py \
-  --orthomosaic data/rasters/orthomosaic_clip.tif \
-  --output data/rasters/deployment_tiles/matterport_windows \
-  --tile-size 448 --overlap 64
+python Python/tile_orthomosaic.py
+
+Every path and option has a project default (orthomosaic
+`data/rasters/orthomosaic_clip.tif`, output
+`data/rasters/deployment_tiles/matterport`, 448px windows with 64px overlap,
+...); run with `--help` to list them, or pass `--orthomosaic` to tile another
+GeoTIFF.
 """
 from __future__ import annotations
 
@@ -27,32 +30,66 @@ import json
 import sys
 from pathlib import Path
 
-import rasterio
-from PIL import Image
-from rasterio.windows import transform as window_transform
+# Catch a wrong environment
+try:
+    import rasterio
+    from PIL import Image
+    from rasterio.windows import transform as window_transform
+except ImportError as e:
+    raise ImportError(
+        "rasterio/Pillow could not be imported in the active Python environment. "
+        "Activate the 'mrcnn_masks' environment before running this script "
+        "(rasterio does not work in Matterport's 'mrcnn_tf2' environment)."
+    ) from e
 
 sys.path.append(str(Path(__file__).resolve().parent.parent / "bin"))
-from shrubs_common import iter_windows, read_rgb_window  # noqa: E402
+from shrubs_common import check_tiling_inputs, iter_windows, read_rgb_window  # noqa: E402
+
+# Store the project base directory
+ROOT = Path(__file__).resolve().parent.parent
+
+DEFAULT_ORTHOMOSAIC = ROOT / "data" / "rasters" / "orthomosaic_clip.tif"
+DEFAULT_OUTPUT = ROOT / "data" / "rasters" / "deployment_tiles" / "matterport"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Pre-tile a GeoTIFF orthomosaic into overlapping windows (plain PNG + transform sidecar)."
     )
-    parser.add_argument("--orthomosaic", type=Path, required=True, help="Georeferenced RGB(A) GeoTIFF.")
-    parser.add_argument("--output", type=Path, required=True, help="Output directory for '*.png'/'*.json' pairs.")
-    parser.add_argument("--tile-size", type=int, default=448)
-    parser.add_argument("--overlap", type=int, default=64)
-    parser.add_argument("--rgb-bands", type=int, nargs=3, default=(1, 2, 3), metavar=("R", "G", "B"))
-    parser.add_argument("--alpha-band", type=int, default=4, help="Band used to detect empty/nodata pixels (0 to disable).")
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--orthomosaic", type=Path, default=DEFAULT_ORTHOMOSAIC,
+        help="Georeferenced 8-bit RGB(A) GeoTIFF (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--output", type=Path, default=DEFAULT_OUTPUT,
+        help="Output directory for '*.png'/'*.json' pairs (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--tile-size", type=int, default=448,
+        help="Window size in pixels; must match the deployment models (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--overlap", type=int, default=64,
+        help="Overlap between neighbouring windows in pixels (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--rgb-bands", type=int, nargs=3, default=(1, 2, 3), metavar=("R", "G", "B"),
+        help="1-based band indices read as RGB (default: 1 2 3).",
+    )
+    parser.add_argument(
+        "--alpha-band", type=int, default=4,
+        help="Band used to detect empty/nodata pixels, 0 to disable (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--overwrite", action="store_true",
+        help="Rewrite windows whose '.png'/'.json' pair already exists.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    if not args.orthomosaic.is_file():
-        raise FileNotFoundError(f"Orthomosaic not found: {args.orthomosaic}")
+    check_tiling_inputs(args.orthomosaic, args.tile_size, args.overlap, args.rgb_bands, args.alpha_band)
 
     args.output.mkdir(parents=True, exist_ok=True)
     alpha_band = args.alpha_band or None

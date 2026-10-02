@@ -1,26 +1,18 @@
 # Deployment and accuracy assessment
 
-Deploy all three trained models (Detectron2 Mask R-CNN, Matterport Mask R-CNN, SAM 3) over the tilled RGB orthomosaic, using the models' chosen operating points. Then score each model's shrub map against the manually digitized `field_work` plot (`data/encinacorba_annotations.gpkg`).
+> Note: the `*_map_sam3.geojson` files and `tile_masks/sam3` outputs currently in this folder were produced with the deprecated `checkpoint_10.pt` (epoch 10) and must be regenerated with `model_best.pt` (epoch 19). The Detectron2 and Matterport maps were produced with the earlier thresholds (0.35 and 0.50) and must also be regenerated.
 
-| Model | Weights / checkpoint | Confidence threshold |
+### Operating point selection
+
+Following Khaldi et al. (2024), each model's operating point is read from its F1 vs. confidence curve on the JuniperMapper Field Work (FW) test split, the set closest to real-world data. The selected threshold is **the highest confidence threshold whose S-IoU@50% F1 is within 1 percentage point of the curve's maximum**. Among thresholds that perform almost equally well, this keeps the most confident one, which limits false-positive masks in the deployed shrub maps. The curves are the `siou_threshold_50.csv` files in `results/evaluation/model_<model>/shrubs_test_fw/`.
+
+| Model | Maximum S-IoU@50% F1 (threshold) | Selected threshold (F1) |
 | --- | --- | --- |
-| Detectron2 Mask R-CNN | `data/logs/detectron2/model_best.pth` | 0.35 |
-| Matterport Mask R-CNN | `data/logs/matterport/phase3_resnet50_seed20260803_20260816T204953/best_validation_map_checkpoint.h5` (the winning config in `best_model_configuration.json`) | 0.50 |
-| SAM 3 (domain-adapted) | `data/logs/sam3/domain_adapt/checkpoints/checkpoint_10.pt` | 0.60 |
+| Detectron2 Mask R-CNN | 0.758 (0.35) | 0.45 (0.752) |
+| Matterport Mask R-CNN | 0.687 (0.00) | 0.60 (0.681) |
+| SAM 3 (domain-adapted) | 0.783 (0.60) | 0.60 (0.783) |
 
-> Note: `best_model_configuration.json` records `selected_confidence_threshold: 0.85`, the value that maximized validation F1 during training's confidence sweep. Deployment instead uses 0.50 for Matterport, a deliberately looser threshold favoring recall over the training-time F1-optimal point.
-
-## Data
-
-- `data/rasters/orthomosaic_clip.tif`: the RGBA orthomosaic (5cm resolution), clipped to a smaller AOI around the field_work plot for faster iteration. No pre-cropped tile files are consumed for deployment any more (see below).
-- `data/encinacorba_annotations.gpkg`:
-  - `field_work_masks`: Manually digitized ground truth masks (EPSG:25830, 79 polygons). It contains:
-    - 58 shrub masks (`shrub == 1`, mean 3.2 square meters)
-    - 21 tree masks (`shrub == 0`, mean 15.2 square meters) to assess false positives.
-    - The `esp_code` and `esp_scientific_name` columns include the species.
-  - `square_rois`: Regions of 9 square meters where the field campaings to digitize the masks were conducted.
-
-Th digitization is exhaustive within the plots (every shrub inside it was digitized), which is what makes plain precision/recall valid. See [Evaluation](#evaluation).
+Matterport's FW curve is almost flat (its maximum is at 0.00), so the rule is what sets its threshold. The `selected_confidence_threshold: 0.85` in `best_model_configuration.json` comes from the training-time sweep on the PI validation split and is not used for deployment. As a robustness check, applying the same rule to the IoU@50% curves (`iou_paper_threshold_50.csv`) gives 0.50, 0.75 and 0.60 respectively.
 
 ## Deployment phase: methodological considerations
 
@@ -40,10 +32,11 @@ Per model:
   - runs `ScaleMatchedPredictor` per window
   - writes `<ortho_stem>_r<row>_c<col>_masks.json` directly into `--output`
 - SAM 3 (`Python/sam3_deploy.py`) must run in WSL2
-  - Uses `bin/shrubs_sam3/utils.py:process_image`
-  - Unchanged tiling (1008px / 128px overlap by default)
-  - Unchanged raster (`*_shrubs.tif`/`*_shrub_confidence.tif`) plus box CSV outputs
-  - One real-polygon `<image_stem>_r<row>_c<col>_masks.json` per window
+  - Same loop as `detectron2_deploy.py`, with `TextPromptPredictor` (`bin/shrubs_sam3/utils.py`) as the predictor
+  - Tiles `--orthomosaic` with the same 448px / 64px overlap windows as Detectron2. SAM 3 upsamples every input to 1008px, so 448px windows reproduce the scale of the validation that selected `model_best.pt` (448px JuniperMapper crops upsampled to 1008px; training used random sizes between 480 and 1008px). Native 1008px windows would show shrubs at less than half that scale, below the smallest one seen in training.
+  - Reads each window with `read_rgb_window` (raw 8-bit RGB, alpha band for validity), like Detectron2 and Matterport. An earlier version applied a per-tile 2–98% percentile stretch, which shifted the radiometry away from the JuniperMapper training images and made the same shrub look different in overlapping windows.
+  - Same `--min-area 4` polygon filter; optional same-window mask NMS (`--nms-iou`, off by default)
+  - writes `<ortho_stem>_r<row>_c<col>_masks.json` directly into `--output` (no raster or CSV outputs)
 - Matterport (`Python/matterport_deploy.py`)
   - Run `Python/tile_orthomosaic.py` (run in `mrcnn_masks`, has rasterio[^1]) to pre-tile the orthomosaic into plain `<stem>_r<row>_c<col>.png` plus `.json` transform-sidecar pairs;
   - Run `matterport_deploy.py` (run in `mrcnn_tf2`) to read those with PIL and the pure-Python `affine` package.
@@ -56,7 +49,7 @@ After running the three model predictions, refine the masks to produce the final
 
 ## Evaluation
 
-The script `Python/evaluate_deployment_accuracy.py` scores each model's refined, georeferenced shrub GeoJSON against `field_work_masks`. It scores by direct polygon-to-polygon matching, clipped to the `square_rois` plot geometries with no buffer (`--plot-buffer 0`, so only masks actually inside the plot are scored):
+The script `Python/evaluate_deployment_accuracy.py` scores each model's refined, georeferenced shrub GeoJSON against `field_work_masks`. :
 
 - Match GT shrub polygons to predictions by greedy one-to-one IoU matching (IoU $\geq 0.1$ to count).
 - Precision = matched predictions / all in-plot predictions.
@@ -83,7 +76,7 @@ python Python/detectron2_deploy.py \
   --orthomosaic data/rasters/orthomosaic_clip.tif \
   --weights data/logs/detectron2/model_best.pth \
   --output results/deployment/tile_masks/detectron2 \
-  --confidence 0.35 --tile-size 448 --overlap 64
+  --confidence 0.45 --tile-size 448 --overlap 64
 
 # 2a. Matterport pre-tiling — conda env mrcnn_masks (has rasterio)
 python Python/tile_orthomosaic.py \
@@ -96,15 +89,18 @@ python Python/matterport_deploy.py \
   --tiles data/rasters/deployment_tiles/matterport \
   --weights "data/logs/matterport/phase3_resnet50_seed20260803_20260816T204953/best_validation_map_checkpoint.h5" \
   --output results/deployment/tile_masks/matterport \
-  --confidence 0.50
+  --confidence 0.60
 
-# 3. SAM 3 — conda env sam3_shrubs, runs on the orthomosaic directly (own tiler)
-# Run the script for every tested prompt
-python Python/sam3_deploy.py data/rasters/orthomosaic_clip.tif \
+# 3. SAM 3 — conda env sam3_shrubs, same internal tiling as Detectron2
+# Run the script for every tested prompt. Empty each prompt's output folder
+# first: windows from an older run (other tile size or raster name) don't get
+# overwritten and would be merged by refine_detections.py.
+rm -rf results/deployment/tile_masks/sam3/shrub
+python Python/sam3_deploy.py \
+  --orthomosaic data/rasters/orthomosaic_clip.tif \
+  --checkpoint data/logs/sam3/domain_adapt/checkpoints/model_best.pt \
   --output results/deployment/tile_masks/sam3/shrub \
-  --prompt shrub --confidence 0.60 \
-  --checkpoint data/logs/sam3/domain_adapt/checkpoints/checkpoint_10.pt \
-  --tile-size 1008 --overlap 128
+  --prompt shrub --confidence 0.60 --tile-size 448 --overlap 64
 
 # 4. Merge each model's per-window detections — conda env mrcnn_masks
 python Python/refine_detections.py \

@@ -24,17 +24,16 @@ so `refine_detections.py` can merge them with no paired GeoTIFF needed.
 
 Example usage:
 
-python tile_orthomosaic.py \
-  --orthomosaic data/rasters/orthomosaic_clip.tif \
-  --output data/rasters/deployment_tiles/matterport \
-  --tile-size 448 --overlap 64
+python Python/tile_orthomosaic.py
 # (in mrcnn_masks, or any environment with a working rasterio)
 
-python matterport_deploy.py \
-  --tiles data/rasters/deployment_tiles/matterport \
-  --output results/deployment/tile_masks/matterport \
-  --confidence 0.50
+python Python/matterport_deploy.py
 # (in mrcnn_tf2)
+
+Every path and option has a project default (tiles from
+`data/rasters/deployment_tiles/matterport`, the default output of
+`tile_orthomosaic.py`; results in `results/deployment/tile_masks/matterport`;
+confidence 0.60, ...); run with `--help` to list them.
 """
 from __future__ import annotations
 
@@ -44,17 +43,33 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from affine import Affine
-from PIL import Image
 
 sys.path.append(str(Path(__file__).resolve().parent.parent / "bin"))
 
-import mrcnn.model as modellib  # noqa: E402
-from shrubs_common import write_window_masks  # noqa: E402
-from shrubs_matterport import BestModelShrubInferenceConfig  # noqa: E402
+# Catch a wrong environment
+try:
+    from affine import Affine
+    from PIL import Image
+    import mrcnn.model as modellib  # noqa: E402
+    from shrubs_matterport import BestModelShrubInferenceConfig  # noqa: E402
+except ImportError as e:
+    raise ImportError(
+        "Matterport Mask R-CNN dependencies are not installed in the active Python "
+        "environment. Activate the 'mrcnn_tf2' environment before running this script."
+    ) from e
 
+from shrubs_common import write_window_masks  # noqa: E402
+
+# Store the project base directory
 ROOT = Path(__file__).resolve().parent.parent
+
+DEFAULT_TILES = ROOT / "data" / "rasters" / "deployment_tiles" / "matterport"
 DEFAULT_METADATA = ROOT / "data" / "logs" / "matterport" / "best_model_configuration.json"
+DEFAULT_OUTPUT = ROOT / "results" / "deployment" / "tile_masks" / "matterport"
+
+# Matterport operating point: highest confidence whose S-IoU@50 F1 on the
+# JuniperMapper FW test split is within 1 point of its maximum (Khaldi et al. 2024)
+DEFAULT_CONFIDENCE = 0.60
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,12 +77,13 @@ def parse_args() -> argparse.Namespace:
         description="Segment shrubs in pre-tiled orthomosaic windows with the winning Matterport Mask R-CNN checkpoint."
     )
     parser.add_argument(
-        "--tiles", type=Path, required=True,
-        help="Directory of '<stem>.png' + '<stem>.json' pairs written by tile_orthomosaic.py.",
+        "--tiles", type=Path, default=DEFAULT_TILES,
+        help="Directory of '<stem>.png' + '<stem>.json' pairs written by "
+             "tile_orthomosaic.py (default: %(default)s).",
     )
     parser.add_argument(
         "--metadata", type=Path, default=DEFAULT_METADATA,
-        help=f"best_model_configuration.json produced by training (default: {DEFAULT_METADATA}).",
+        help="best_model_configuration.json produced by training (default: %(default)s).",
     )
     parser.add_argument(
         "--weights", type=Path, default=None,
@@ -76,12 +92,50 @@ def parse_args() -> argparse.Namespace:
             "resolved relative to the metadata file's folder."
         ),
     )
-    parser.add_argument("--output", type=Path, required=True, help="Output directory for '*_masks.json'.")
-    parser.add_argument("--confidence", type=float, default=0.5, help="Score threshold to keep a prediction.")
-    parser.add_argument("--min-area", type=float, default=4.0, help="Drop polygons smaller than this many pixels.")
-    parser.add_argument("--model-dir", type=Path, default=ROOT / "data" / "logs", help="Scratch dir for Keras logs.")
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--output", type=Path, default=DEFAULT_OUTPUT,
+        help="Output directory for '*_masks.json' (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--confidence", type=float, default=DEFAULT_CONFIDENCE,
+        help="Score threshold to keep a prediction (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--min-area", type=float, default=4.0,
+        help="Drop polygons smaller than this many pixels (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--model-dir", type=Path, default=ROOT / "data" / "logs",
+        help="Scratch dir for Keras logs (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--overwrite", action="store_true",
+        help="Re-run windows whose '*_masks.json' already exists.",
+    )
     return parser.parse_args()
+
+
+def check_inputs(args: argparse.Namespace) -> None:
+    """Fail early, before the model is built, on missing inputs or invalid options."""
+    if not args.metadata.is_file():
+        raise FileNotFoundError(
+            f"Model metadata not found at '{args.metadata}'. Train the Matterport "
+            "model first, or pass its 'best_model_configuration.json' with --metadata."
+        )
+
+    if args.weights is not None and not args.weights.is_file():
+        raise FileNotFoundError(f"Checkpoint passed with --weights not found: '{args.weights}'.")
+
+    if not args.tiles.is_dir():
+        raise FileNotFoundError(
+            f"Tiles directory not found at '{args.tiles}'. Run tile_orthomosaic.py "
+            "first (in the 'mrcnn_masks' environment), or pass the folder with --tiles."
+        )
+
+    if not 0.0 <= args.confidence <= 1.0:
+        raise ValueError(f"--confidence must be in [0, 1], got {args.confidence}.")
+    if args.min_area < 0:
+        raise ValueError(f"--min-area must be non-negative, got {args.min_area}.")
 
 
 def find_windows(tiles_dir: Path) -> list[Path]:
@@ -99,6 +153,7 @@ def find_windows(tiles_dir: Path) -> list[Path]:
 
 def main() -> None:
     args = parse_args()
+    check_inputs(args)
 
     # Raises FileNotFoundError, suggesting --weights, if the checkpoint is missing.
     config = BestModelShrubInferenceConfig(args.metadata, weights_path=args.weights)

@@ -11,6 +11,8 @@ data/encinacorba_fire.zip
 Notebooks/
 paper/
 /Python/**/__pycache__/
+# Internal sanity-check script, not part of the scientific workflow
+/Python/detectron2_predict.py
 R/.Rhistory
 R/.Rproj.user
 R/R.Rproj

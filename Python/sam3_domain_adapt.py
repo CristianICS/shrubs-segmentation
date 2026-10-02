@@ -1,4 +1,5 @@
-"""Phase 1 domain adaptation: frozen-backbone SAM 3 decoder fine-tuning.
+"""
+Phase 1 domain adaptation: frozen-backbone SAM 3 decoder fine-tuning.
 
 Trains only SAM 3's transformer/detection/segmentation head on JuniperMapper
 (both the SAM 3 vision and language backbones stay frozen, via
@@ -10,7 +11,6 @@ machinery through the Hydra config in `bin/shrubs_sam3/configs/
 juniper_frozen_backbone.yaml`, the same way SAM 3's own `sam3/train/train.py`
 launcher does for a single local process.
 
-The zero-shot CLI (`sam3_deploy.py`) and its default behavior are untouched.
 After every epoch the model is validated on the JuniperMapper Photo
 Interpretation Val split, and the epoch with the highest COCO mask AP50
 (ties broken by mask mAP50:95, then the earliest epoch) is saved as
@@ -18,16 +18,16 @@ Interpretation Val split, and the epoch with the highest COCO mask AP50
 This is the same selection criterion as the Detectron2 and Matterport
 Mask R-CNN models.
 
-Example usage:
+Example usage (inside the `sam3_shrubs` environment):
 
-    python Python/sam3_domain_adapt.py \\
-      --output data/logs/sam3/domain_adapt --max-epochs 30 \\
-      --checkpoint models/sam3/sam3.pt
+    python Python/sam3_domain_adapt.py --checkpoint /path/to/sam3.pt
 
-`--checkpoint` is optional: it starts training from an already-downloaded
-local release checkpoint (the same file `sam3_deploy.py --checkpoint` and
-`sam3_evaluate.py --checkpoint` take) instead of re-downloading the gated
-checkpoint from Hugging Face.
+Every other path and option has a project default; run with `--help` to
+list them.
+
+`--checkpoint` points to the official SAM 3 release checkpoint in your local
+folder. If omitted, the gated checkpoint is downloaded from Hugging Face instead
+(requires `hf auth login`).
 """
 from __future__ import annotations
 
@@ -42,15 +42,24 @@ BIN_DIR = PROJECT_ROOT / "bin"
 if str(BIN_DIR) not in sys.path:
     sys.path.insert(0, str(BIN_DIR))
 
-from shrubs_sam3 import prepare_juniper_coco  # noqa: E402
+# Catch a wrong environment
+try:
+    from shrubs_sam3 import prepare_juniper_coco  # noqa: E402
+except ImportError as e:
+    raise ImportError(
+        "SAM 3 dependencies are not installed in the active Python environment. "
+        "Activate the 'sam3_shrubs' environment (WSL2) before running this script."
+    ) from e
 
 CONFIG_DIR = BIN_DIR / "shrubs_sam3" / "configs"
 CONFIG_NAME = "juniper_frozen_backbone"
 
-DEFAULT_TRAIN_JSON = PROJECT_ROOT / "data/JuniperMapper/Photo_Interpretation_Data/Train/Annotations/Train.json"
-DEFAULT_TRAIN_IMAGES = PROJECT_ROOT / "data/JuniperMapper/Photo_Interpretation_Data/Train/Images"
-DEFAULT_VAL_JSON = PROJECT_ROOT / "data/JuniperMapper/Photo_Interpretation_Data/Val/Annotations/Val.json"
-DEFAULT_VAL_IMAGES = PROJECT_ROOT / "data/JuniperMapper/Photo_Interpretation_Data/Val/Images"
+JM_DIR = PROJECT_ROOT / "data" / "JuniperMapper"
+DEFAULT_TRAIN_JSON = JM_DIR / "Photo_Interpretation_Data/Train/Annotations/Train.json"
+DEFAULT_TRAIN_IMAGES = JM_DIR / "Photo_Interpretation_Data/Train/Images"
+DEFAULT_VAL_JSON = JM_DIR / "Photo_Interpretation_Data/Val/Annotations/Val.json"
+DEFAULT_VAL_IMAGES = JM_DIR / "Photo_Interpretation_Data/Val/Images"
+DEFAULT_OUTPUT = PROJECT_ROOT / "data/logs/sam3/domain_adapt"
 
 
 def existing_file(value: str) -> Path:
@@ -74,13 +83,33 @@ def build_parser() -> argparse.ArgumentParser:
             "with both backbones frozen."
         )
     )
-    parser.add_argument("--train-json", type=existing_file, default=DEFAULT_TRAIN_JSON)
-    parser.add_argument("--train-images", type=existing_dir, default=DEFAULT_TRAIN_IMAGES)
-    parser.add_argument("--val-json", type=existing_file, default=DEFAULT_VAL_JSON)
-    parser.add_argument("--val-images", type=existing_dir, default=DEFAULT_VAL_IMAGES)
     parser.add_argument(
-        "--output", type=Path, required=True,
-        help="Experiment directory: converted annotations, checkpoints, logs.",
+        "--checkpoint", type=existing_file, default=None,
+        help="Local official SAM 3 release checkpoint to start training from "
+             "(same file sam3_deploy.py's --checkpoint takes). Omit to "
+             "download the gated release checkpoint from Hugging Face instead.",
+    )
+    parser.add_argument(
+        "--train-json", type=existing_file, default=DEFAULT_TRAIN_JSON,
+        help="JuniperMapper COCO annotations for training (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--train-images", type=existing_dir, default=DEFAULT_TRAIN_IMAGES,
+        help="Training image folder (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--val-json", type=existing_file, default=DEFAULT_VAL_JSON,
+        help="JuniperMapper COCO annotations for validation (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--val-images", type=existing_dir, default=DEFAULT_VAL_IMAGES,
+        help="Validation image folder (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--output", type=Path, default=DEFAULT_OUTPUT,
+        help="Experiment directory: converted annotations, checkpoints, logs "
+             "(default: %(default)s). Training resumes if it already holds "
+             "checkpoints/checkpoint.pt.",
     )
     parser.add_argument(
         "--prompt", default="shrub",
@@ -93,30 +122,63 @@ def build_parser() -> argparse.ArgumentParser:
              "alongside the sam3 package (sam3/assets/bpe_simple_vocab_16e6.txt.gz).",
     )
     parser.add_argument(
-        "--checkpoint", type=existing_file, default=None,
-        help="Optional local official SAM 3 release checkpoint to start training "
-             "from (same file sam3_deploy.py's --checkpoint takes). Omit to "
-             "download the gated release checkpoint from Hugging Face instead.",
+        "--max-epochs", type=int, default=30,
+        help="Number of training epochs (default: %(default)s).",
     )
-    parser.add_argument("--max-epochs", type=int, default=30)
     parser.add_argument(
         "--val-epoch-freq", type=int, default=1,
         help="Validate (and update model_best.pt) every N epochs (default: %(default)s).",
     )
-    parser.add_argument("--checkpoint-freq", type=int, default=5,
-                         help="Save a numbered checkpoint every N epochs (0 disables).")
-    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument(
+        "--checkpoint-freq", type=int, default=5,
+        help="Save a numbered checkpoint every N epochs, 0 disables (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=2,
+        help="Training batch size (default: %(default)s).",
+    )
     parser.add_argument(
         "--num-workers", type=int, default=4,
         help="Dataloader worker processes. Set to 0 if Windows multiprocessing "
-             "causes issues.",
+             "causes issues (default: %(default)s).",
     )
-    parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+    parser.add_argument(
+        "--device", choices=("cuda", "cpu"), default="cuda",
+        help="Training device (default: %(default)s).",
+    )
     parser.add_argument(
         "--seed", type=int, default=42,
-        help="Passed straight through to the trainer for run-to-run reproducibility.",
+        help="Passed straight through to the trainer for run-to-run "
+             "reproducibility (default: %(default)s).",
     )
     return parser
+
+
+def check_inputs(args: argparse.Namespace) -> None:
+    """Fail early, listing every missing training input at once.
+
+    argparse only applies `existing_file`/`existing_dir` to values typed on the
+    command line, not to the Path defaults, so those are checked here.
+    """
+    inputs = (
+        ("--train-json", args.train_json),
+        ("--train-images", args.train_images),
+        ("--val-json", args.val_json),
+        ("--val-images", args.val_images),
+    )
+
+    # Only relevant when the inputs point inside the JuniperMapper database
+    if not JM_DIR.exists() and any(Path(path).resolve().is_relative_to(JM_DIR) for _, path in inputs):
+        raise FileNotFoundError(
+            f"JuniperMapper database not found at '{JM_DIR}'. "
+            "Place a valid database copy inside the 'data' directory."
+        )
+
+    missing = [f"  - {name}: {path}" for name, path in inputs if not Path(path).exists()]
+    if missing:
+        raise FileNotFoundError(
+            "The following training inputs are missing:\n" + "\n".join(missing)
+        )
 
 
 def _default_bpe_path() -> Path:
@@ -148,9 +210,18 @@ def _free_port() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    check_inputs(args)
     bpe_path = args.bpe_path or _default_bpe_path()
 
     output = args.output.expanduser().resolve()
+    if (output / "checkpoints" / "checkpoint.pt").is_file():
+        print(
+            f"Found an existing run in '{output}': training resumes from "
+            "checkpoints/checkpoint.pt. Pass a new --output to start from scratch."
+        )
+    elif args.checkpoint is None:
+        print("No --checkpoint given: downloading the gated SAM 3 checkpoint from Hugging Face.")
+
     annotations_dir = output / "annotations"
     train_json = annotations_dir / "train.json"
     val_json = annotations_dir / "val.json"

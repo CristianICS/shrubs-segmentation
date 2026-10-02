@@ -26,7 +26,7 @@ stats_path <- file.path(
 comparative_stats <- read.csv(stats_path)
 
 best_point_cloud <- comparative_stats$point_cloud[
-  which.min(comparative_stats$mean_rmse)
+  which.min(comparative_stats$rmse)
 ]
 message("Best classified point cloud: ", best_point_cloud)
 
@@ -36,7 +36,7 @@ cls_best_path <- if (best_point_cloud == "MCC") {
 } else if (best_point_cloud == "PMF") {
   file.path(cloud_dir, "las_pmf_cls_tiles")
 } else {
-  # PTD variants are named "PTD_<window_size>_<slope_threshold>"
+  # PTD variants are named "PTD_<angle>_<distance>"
   file.path(
     cloud_dir,
     paste0("las_ptd_cls_tiles_", sub("^PTD_", "", best_point_cloud))

@@ -18,7 +18,7 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 out_path <- file.path(out_dir, "mask_height_stats.csv")
 
 # Load data -------------------------------------------------------------------
-masks <- vect(annotations_path)
+masks <- vect(annotations_path, layer = "field_work_masks")
 chm <- rast(chm_path)
 
 if (!same.crs(masks, chm)) {

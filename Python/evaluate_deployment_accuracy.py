@@ -4,45 +4,25 @@ digitized `field_work` ground truth.
 
 `field_work` (`data/encinacorba_annotations.gpkg`) exhaustively digitizes
 every shrub (`shrub == 1`) inside its plot, plus the trees (`shrub == 0`)
-there, as the false-positive-on-trees check. Because digitization is
-exhaustive, a prediction inside the plot with no matching ground-truth shrub
-genuinely is a false positive (it doesn't even need to land on a digitized
-tree to count as one -- "not a digitized shrub" is enough), so plain
-one-to-one-matched precision/recall/F1 is valid here:
+there, as the false-positive-on-trees check.
 
-- recall: fraction of ground-truth shrub polygons matched by a prediction.
-- precision: fraction of in-plot predictions matched to a ground-truth shrub.
-- tree_commission_rate: fraction of ground-truth tree polygons matched by a
-  prediction -- a diagnostic breakdown of what a chunk of the false positives
-  land on, not a separate test.
-- "in the plot" means intersecting the union of the `square_rois` square
-  geometries, with no buffer (`--plot-buffer 0`). This -- not the
-  ground-truth polygons themselves -- is what "in the plot" is measured
-  against, since the survey plots also contain bare ground where a
-  prediction would be a genuine false positive despite not touching any
-  digitized polygon.
+Example usage (inside the `mrcnn_masks` environment):
 
-Example usage (explicit files and names):
+python Python/evaluate_deployment_accuracy.py
 
-python evaluate_deployment_accuracy.py \
-  --predictions results/deployment/model_detectron2.geojson \
-    results/deployment/model_matterport.geojson \
-    results/deployment/model_sam3.geojson \
-  --model-names detectron2 matterport sam3 \
-  --ground-truth data/encinacorba_annotations.gpkg --layer field_work_masks \
-  --rois-layer square_rois \
-  --output-dir results/evaluation/deployment_accuracy
+Every path and option has a project default; run with `--help` to list them.
+By default --predictions is the `results/deployment` folder: every
+'<prompt>_map_<model>.geojson' file in it is auto-discovered, and model names
+and, for SAM 3, the text prompt used are inferred from the filenames. Scores
+are written to `results/evaluation/deployment_accuracy`.
 
-Or, point --predictions at a folder instead to auto-discover every
-'<prompt>_map_<model>.geojson' file in it (e.g. results/deployment) and infer
-model names and, for SAM 3, the text prompt used, without listing files or
---model-names by hand:
+To score specific files instead, list them with matching --model-names:
 
-python evaluate_deployment_accuracy.py \
-  --predictions results/deployment \
-  --ground-truth data/encinacorba_annotations.gpkg --layer field_work_masks \
-  --rois-layer square_rois \
-  --output-dir results/evaluation/deployment_accuracy
+python Python/evaluate_deployment_accuracy.py \
+  --predictions results/deployment/shrub_map_detectron2.geojson \
+    results/deployment/shrub_map_matterport.geojson \
+    results/deployment/shrub_map_sam3.geojson \
+  --model-names detectron2 matterport sam3
 """
 from __future__ import annotations
 
@@ -51,10 +31,27 @@ import csv
 from pathlib import Path
 from statistics import mean
 
-import geopandas as gpd
-from shapely.geometry.base import BaseGeometry
+# Catch a wrong environment
+try:
+    import geopandas as gpd
+    from shapely.geometry.base import BaseGeometry
+except ImportError as e:
+    raise ImportError(
+        "geopandas/shapely could not be imported in the active Python environment. "
+        "Activate the 'mrcnn_masks' environment before running this script."
+    ) from e
 
 PREDICTIONS_FILENAME_SEP = "_map_"
+
+# Store the project base directory
+ROOT = Path(__file__).resolve().parent.parent
+
+DEFAULT_PREDICTIONS = ROOT / "results" / "deployment"
+DEFAULT_GROUND_TRUTH = ROOT / "data" / "encinacorba_annotations.gpkg"
+DEFAULT_OUTPUT_DIR = ROOT / "results" / "evaluation" / "deployment_accuracy"
+
+# Ground-truth layer columns used by the matching and the per-match CSVs
+REQUIRED_GT_COLUMNS = ("shrub", "Id", "esp_code")
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,32 +59,54 @@ def parse_args() -> argparse.Namespace:
         description="Score deployed shrub predictions against manually digitized field_work polygons."
     )
     parser.add_argument(
-        "--predictions", type=Path, nargs="+", required=True,
+        "--predictions", type=Path, nargs="+", default=[DEFAULT_PREDICTIONS],
         help=(
             "Either one refined GeoJSON per model (paired with --model-names), or a single folder "
-            "containing '<prompt>_map_<model>.geojson' files to auto-discover models and names from."
+            "containing '<prompt>_map_<model>.geojson' files to auto-discover models and names from "
+            "(default: %(default)s)."
         ),
     )
     parser.add_argument(
         "--model-names", nargs="+",
         help="Name for each --predictions entry, same order. Omit when --predictions is a folder.",
     )
-    parser.add_argument("--ground-truth", type=Path, required=True, help="GeoPackage with the field_work and square_rois layers.")
-    parser.add_argument("--layer", default="field_work_masks", help="Ground-truth shrub/tree polygon layer.")
+    parser.add_argument(
+        "--ground-truth", type=Path, default=DEFAULT_GROUND_TRUTH,
+        help="GeoPackage with the field_work and square_rois layers (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--layer", default="field_work_masks",
+        help="Ground-truth shrub/tree polygon layer (default: %(default)s).",
+    )
     parser.add_argument(
         "--rois-layer", default="square_rois",
         help="Layer of survey-plot squares that defines what counts as 'in the plot' (default: %(default)s).",
     )
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
+        help="Output directory for summary.csv and the per-run '*_matches.csv' (default: %(default)s).",
+    )
     parser.add_argument(
         "--plot-buffer", type=float, default=0.0,
         help="Metres to buffer the square_rois geometries by when clipping predictions (default: %(default)s, i.e. no buffer).",
     )
     parser.add_argument(
         "--iou-threshold", type=float, default=0.1,
-        help="Minimum IoU between a ground-truth polygon and its best-overlapping prediction to count as a match.",
+        help="Minimum IoU between a ground-truth polygon and its best-overlapping prediction "
+             "to count as a match (default: %(default)s).",
     )
     args = parser.parse_args()
+
+    # Checked before deciding between folder and file mode: a missing default
+    # folder would otherwise be taken for a file and misreported as a missing
+    # --model-names.
+    missing = [str(path) for path in args.predictions if not path.exists()]
+    if missing:
+        raise FileNotFoundError(
+            "The following --predictions paths do not exist:\n  - " + "\n  - ".join(missing) + "\n"
+            "Run the deployment scripts and refine_detections.py first, or pass the "
+            "prediction files/folder with --predictions."
+        )
 
     args.predictions_dir = args.predictions[0] if len(args.predictions) == 1 and args.predictions[0].is_dir() else None
     if args.predictions_dir is not None:
@@ -99,6 +118,42 @@ def parse_args() -> argparse.Namespace:
         if len(args.predictions) != len(args.model_names):
             parser.error("--predictions and --model-names must have the same length.")
     return args
+
+
+def check_inputs(args: argparse.Namespace) -> None:
+    """Fail early, before any scoring, on a bad ground truth or invalid options."""
+    if not args.ground_truth.is_file():
+        raise FileNotFoundError(
+            f"Ground-truth GeoPackage not found at '{args.ground_truth}'. Place the "
+            "field annotations there, or pass their location with --ground-truth."
+        )
+
+    available_layers = set(gpd.list_layers(args.ground_truth)["name"])
+    missing_layers = [
+        f"{flag} '{layer}'"
+        for flag, layer in (("--layer", args.layer), ("--rois-layer", args.rois_layer))
+        if layer not in available_layers
+    ]
+    if missing_layers:
+        raise ValueError(
+            f"Layer(s) not found in '{args.ground_truth.name}': {', '.join(missing_layers)}. "
+            f"Available layers: {', '.join(sorted(available_layers))}."
+        )
+
+    if not 0 < args.iou_threshold <= 1:
+        raise ValueError(f"--iou-threshold must be in (0, 1], got {args.iou_threshold}.")
+    if args.plot_buffer < 0:
+        raise ValueError(f"--plot-buffer must be non-negative, got {args.plot_buffer}.")
+
+
+def check_ground_truth_columns(gt: gpd.GeoDataFrame, layer: str) -> None:
+    """Raise if the ground-truth layer lacks a column the scoring relies on."""
+    missing = [column for column in REQUIRED_GT_COLUMNS if column not in gt.columns]
+    if missing:
+        raise ValueError(
+            f"Ground-truth layer '{layer}' is missing column(s) {missing}. "
+            f"Expected {list(REQUIRED_GT_COLUMNS)}, where 'shrub' is 1 for shrubs and 0 for trees."
+        )
 
 
 def model_label(run_name: str) -> str:
@@ -273,9 +328,11 @@ def evaluate_model(
 
 def main() -> None:
     args = parse_args()
+    check_inputs(args)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     gt = gpd.read_file(args.ground_truth, layer=args.layer)
+    check_ground_truth_columns(gt, args.layer)
     gt_shrub = gt[gt["shrub"] == 1].reset_index(drop=True)
     gt_tree = gt[gt["shrub"] == 0].reset_index(drop=True)
 

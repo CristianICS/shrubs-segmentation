@@ -9,11 +9,54 @@ shrub instead of two clipped halves.
 """
 from __future__ import annotations
 
-from typing import Iterable
+from pathlib import Path
+from typing import Iterable, Sequence
 
 import numpy as np
 import rasterio
 from rasterio.windows import Window
+
+
+def check_tiling_inputs(
+    orthomosaic: Path,
+    tile_size: int,
+    overlap: int,
+    rgb_bands: Sequence[int] = (1, 2, 3),
+    alpha_band: int | None = 4,
+) -> None:
+    """Fail early, with informative messages, on a bad orthomosaic or tiling options.
+
+    Shared by the scripts that tile an orthomosaic (`tile_orthomosaic.py`,
+    `detectron2_deploy.py`, `sam3_deploy.py`), so a missing raster, an impossible window layout or
+    a band the raster doesn't have is reported before any model is built or any
+    window is written. Messages name the command-line flags those scripts share.
+    `alpha_band` of 0 or None disables the alpha-band check.
+    """
+    orthomosaic = Path(orthomosaic)
+    if not orthomosaic.is_file():
+        raise FileNotFoundError(
+            f"Orthomosaic not found at '{orthomosaic}'. Place the RGB GeoTIFF "
+            "there, or pass its location with --orthomosaic."
+        )
+
+    if tile_size <= 0:
+        raise ValueError(f"--tile-size must be positive, got {tile_size}.")
+    if not 0 <= overlap < tile_size:
+        raise ValueError(
+            f"--overlap must be in [0, tile size), got {overlap} for a "
+            f"tile size of {tile_size}."
+        )
+
+    with rasterio.open(orthomosaic) as source:
+        band_count = source.count
+    requested = [*rgb_bands, *([alpha_band] if alpha_band else [])]
+    invalid = [band for band in requested if not 1 <= band <= band_count]
+    if invalid:
+        raise ValueError(
+            f"Band(s) {invalid} do not exist in '{orthomosaic.name}', which has "
+            f"{band_count} band(s). Adjust --rgb-bands, or set --alpha-band 0 if "
+            "the raster has no alpha band."
+        )
 
 
 def starts(length: int, tile_size: int, overlap: int) -> list[int]:

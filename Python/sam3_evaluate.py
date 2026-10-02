@@ -10,98 +10,67 @@ comparable on the same JuniperMapper splits. Ground-truth polygons are decoded
 with pycocotools directly, with no Detectron2 dependency, so this runs in the
 lighter `sam3_shrubs` environment.
 
-Example usage:
-
-python sam3_evaluate.py \
-  --dataset shrubs_test_pi \
-    ./JuniperMapper/Photo_Interpretation_Data/Test/Annotations/Test.json \
-    ./JuniperMapper/Photo_Interpretation_Data/Test/Images \
-  --dataset shrubs_test_fw \
-    ./JuniperMapper/Field_Work_Data/External_Val_Data/Annotations/Val.json \
-    ./JuniperMapper/Field_Work_Data/External_Val_Data/Images \
-  --prompt shrub --output-dir results/evaluation/model_sam3 \
-  --checkpoint models/sam3/sam3.pt
+Run it with `python Python/sam3_evaluate.py` inside the `sam3_shrubs`
+environment. The checkpoint, prompt and output folder are set at the top
+of this file; the test splits and evaluation settings are shared with
+`detectron2_evaluate.py` through `shrubs_common.evaluation`.
 """
 from __future__ import annotations
 
-import argparse
 import json
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
 from PIL import Image
-from pycocotools import mask as mask_utils
 
 sys.path.append(str(Path(Path(__file__).absolute().parent.parent, 'bin')))
-from shrubs_common import METRIC_DEFINITIONS, Prediction, PredictionCache, run_predictor
+
+# Catch a wrong environment
+try:
+    from pycocotools import mask as mask_utils
+    from shrubs_sam3 import TextPromptPredictor, build_processor, sam3_autocast
+except ImportError as e:
+    raise ImportError(
+        "SAM 3 dependencies are not installed in the active Python environment. "
+        "Activate the 'sam3_shrubs' environment (WSL2) before running this script."
+    ) from e
+
+from shrubs_common import (
+    TEST_DATASETS, EvaluationDataset, EvaluationSettings, Prediction, PredictionCache,
+    check_dataset_inputs, run_predictor,
+)
 from shrubs_common.plotting import run_evaluation_report
-from shrubs_sam3 import TextPromptPredictor, build_processor, sam3_autocast
+
+# Store the project base directory
+ROOT = Path(__file__).resolve().parent.parent
+
+# Domain-adapted checkpoint written by sam3_domain_adapt.py.
+# Set to None for the zero-shot release model (downloaded from Hugging Face).
+CHECKPOINT = ROOT / "data" / "logs" / "sam3" / "domain_adapt" / "checkpoints" / "model_best.pt"
+PROMPT = "shrub"
+
+# Keep zero-shot and domain-adapted results apart so neither overwrites the other
+OUTPUT_DIR = ROOT / "results" / "evaluation" / (
+    "model_sam3" if CHECKPOINT is not None else "model_sam3_zero_shot"
+)
+
+# Shared with detectron2_evaluate.py; override a field here only for a one-off run
+SETTINGS = EvaluationSettings()
 
 
-@dataclass(frozen=True)
-class DatasetSpec:
-    name: str
-    json_file: Path
-    image_root: Path
+def check_inputs() -> None:
+    """Fail early if the checkpoint or any test split is missing."""
+    check_dataset_inputs(TEST_DATASETS)
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Evaluate a SAM 3 checkpoint on COCO-format shrub datasets."
-    )
-    parser.add_argument(
-        "--checkpoint", type=Path, default=None,
-        help="Local release or fine-tuned checkpoint. Omit for the default zero-shot download.",
-    )
-    parser.add_argument("--prompt", default="shrub")
-    parser.add_argument(
-        "--dataset",
-        action="append",
-        nargs=3,
-        metavar=("NAME", "COCO_JSON", "IMAGE_ROOT"),
-        required=True,
-        help=(
-            "Dataset definition. Repeat for multiple test sets, for example: "
-            "--dataset shrubs_test_pi annotations.json Images"
-        ),
-    )
-    parser.add_argument("--output-dir", type=Path, default=Path("results/evaluation"))
-    parser.add_argument("--class-id", type=int, default=0)
-    parser.add_argument(
-        "--confidence-thresholds",
-        type=float,
-        nargs="*",
-        default=None,
-        help="Threshold sweep. Default: 0.00, 0.05, ..., 1.00.",
-    )
-    parser.add_argument(
-        "--evaluation-thresholds",
-        type=float,
-        nargs="+",
-        default=(0.50, 0.75),
-        help="IoU and S-IoU thresholds.",
-    )
-    parser.add_argument(
-        "--pixel-confidence",
-        type=float,
-        default=0.50,
-        help="Confidence threshold used for the standalone pixel evaluation.",
-    )
-    parser.add_argument(
-        "--iou-metric-definition",
-        choices=METRIC_DEFINITIONS,
-        default="standard",
-        help=(
-            "IoU counting: 'standard' (COCO-style one-to-one matching) or 'paper' "
-            "(Khaldi et al. 2024 independent best matches, recall = TP / (TP + FN))."
-        ),
-    )
-    parser.add_argument("--minimum-intersection-pixels", type=int, default=1)
-    parser.add_argument("--show-plots", action="store_true", help="Also open each saved F1 figure in a window.")
-    return parser.parse_args()
+    if CHECKPOINT is not None and not CHECKPOINT.is_file():
+        raise FileNotFoundError(
+            f"SAM 3 checkpoint not found at '{CHECKPOINT}'. "
+            "Run 'sam3_domain_adapt.py' first, copy the trained 'model_best.pt' "
+            "into 'data/logs/sam3/domain_adapt/checkpoints', or set CHECKPOINT = None "
+            "to evaluate the zero-shot model."
+        )
 
 
 def _instances_from_annotation(annotation: Mapping[str, Any]) -> list[Any]:
@@ -173,30 +142,23 @@ def _read_rgb(record: Mapping[str, Any]) -> np.ndarray:
     return np.array(Image.open(record["file_name"]).convert("RGB"))
 
 
-def evaluate_dataset(predictor: TextPromptPredictor, spec: DatasetSpec, args: argparse.Namespace) -> None:
+def evaluate_dataset(predictor: TextPromptPredictor, spec: EvaluationDataset) -> None:
     records, ground_truths = load_ground_truth_coco(spec.json_file, spec.image_root)
     print(f"\nDataset: {spec.name} ({len(records)} images)")
     predictions = run_predictor(predictor, records, _read_rgb)
-    run_evaluation_report(ground_truths, predictions, args.output_dir / spec.name, args)
+    run_evaluation_report(ground_truths, predictions, OUTPUT_DIR / spec.name, SETTINGS)
 
 
 def main() -> None:
-    args = parse_args()
-    if args.checkpoint is not None and not args.checkpoint.is_file():
-        raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
+    check_inputs()
 
-    specs = [
-        DatasetSpec(name=name, json_file=Path(json_file), image_root=Path(image_root))
-        for name, json_file, image_root in args.dataset
-    ]
-
-    processor, device = build_processor(confidence=0.0, checkpoint=args.checkpoint)
+    processor, device = build_processor(confidence=0.0, checkpoint=CHECKPOINT)
     print(f"Using {device.upper()} for inference.")
-    predictor = TextPromptPredictor(processor, args.prompt)
+    predictor = TextPromptPredictor(processor, PROMPT)
 
     with sam3_autocast(device):
-        for spec in specs:
-            evaluate_dataset(predictor, spec, args)
+        for spec in TEST_DATASETS:
+            evaluate_dataset(predictor, spec)
 
 
 if __name__ == "__main__":

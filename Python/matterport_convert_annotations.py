@@ -1,5 +1,6 @@
 """
-Transform the JuniperMapper annotations into a valid format for Mask RCNN model.
+Transform the JuniperMapper annotations into a valid format for Matterport
+Mask R-CNN model.
 """
 from pathlib import Path
 import json

@@ -1,12 +1,10 @@
 # Check the accuracy of the ground classification with GNSS data
 library(lidR)
+library(terra)
 library(dplyr)
 library(ggplot2)
 library(patchwork)
 library(sf)
-# Custom package to compute target metrics
-# https://github.com/CristianICS/lidaynight
-library(lidaynight)
 
 # Get the current script path if running in RStudio
 if (rstudioapi::isAvailable()) {
@@ -15,6 +13,10 @@ if (rstudioapi::isAvailable()) {
   # Insert the ROOT dir manually
   root <- getwd()
 }
+
+# Set to TRUE to recompute and overwrite the DTMs of each classification;
+# set to FALSE to reuse the existing ones when available.
+overwrite <- FALSE
 
 data_dir <- file.path(root, "data")
 cloud_dir <- file.path(data_dir, "point_cloud", "las_outlier_filter_tiles")
@@ -45,87 +47,114 @@ gnss_data <- st_read(gnss_data_path)
 elev_col <- "height_ortho"
 id_col <- "id"
 
-# Get the average point cloud height within a buffer from each GNSS target
-buffer_size_m <- 0.10
+# Height difference (m) above which a DTM value is considered incoherent
+# with the GNSS reference height
+incoh_thresh_m <- 0.5
 
-targets_rmse <- function(
-  sf_pnts,
-  elev_col,
-  id_col,
-  buffer_m,
-  ctg,
-  pnt_cloud_name
-) {
-  # Select only ground points
-  opt_filter(ctg) <- "-keep_class 2"
-
-  pnt_buffers <- st_buffer(sf_pnts, dist = buffer_m)
-
-  # Select only the points inside the buffers.
-  # Returns a list of LAS objects, one per buffer
-  las_list <- clip_roi(ctg, pnt_buffers)
-
-  # Construct the table where extracted point cloud data will be stored
-  ref_table <- st_drop_geometry(pnt_buffers[, c(id_col, elev_col)])
-
-  metrics <- data.table::rbindlist(
-    Map(
-      compute_target_metrics,
-      las_list,
-      ref_table[[id_col]],
-      ref_table[[elev_col]],
-      # Note: the incoherent threshold acts as the heigh value to consider
-      # a point invalid based on the difference between the point and the
-      # reference height. Value in meters
-      MoreArgs = list(incoh_thresh = 0.5)
-    )
-  )
-
-  # RMSE of LiDAR last returns within each buffer relative to that
-  # target's reference height.
-  metrics$rmse_last <- ifelse(
-    metrics$n_pnts_last > 0L,
-    sqrt(metrics$sum_errs_last_sq / metrics$n_pnts_last),
-    NA_real_
-  )
-
-  summarize_target_metrics <- metrics |>
-    summarise(
-      point_cloud = pnt_cloud_name,
-
-      pct_incoherent_points =
-        100 * sum(n_pnts_last_incoherent, na.rm = TRUE) /
-        sum(n_pnts_last, na.rm = TRUE),
-
-      mean_rmse = mean(rmse_last, na.rm = TRUE),
-
-      min_thickness = min(thickness, na.rm = TRUE),
-      max_thickness = max(thickness, na.rm = TRUE),
-      mean_thickness = mean(thickness, na.rm = TRUE)
-    )
-
-  list("target_metrics" = metrics, "summarize" = summarize_target_metrics)
+# Create one DTM per classification ---------------------------------------
+# Each DTM is built exactly as data/rasters/encinacorba_dtm.tif (TIN on the
+# orthomosaic grid, see R/create_dtm_derived_products.R), so the selected
+# classification is validated through the same product used downstream.
+# Sampling a continuous DTM gives every method a value at the same targets,
+# whereas the ground points around a target can be missing for some methods.
+dtm_dir <- file.path(data_dir, "rasters", "ground_cls_dtms")
+if (!dir.exists(dtm_dir)) {
+  dir.create(dtm_dir)
 }
 
-cls_mcc_metrics <- targets_rmse(gnss_data, elev_col, id_col, buffer_size_m, cls_mcc, "MCC")
-cls_pmf_metrics <- targets_rmse(gnss_data, elev_col, id_col, buffer_size_m, cls_pmf, "PMF")
-cls_ptd_metrics_list <- Map(
-  \(ctg, name) targets_rmse(gnss_data, elev_col, id_col, buffer_size_m, ctg, name),
-  cls_ptd_list,
-  names(cls_ptd_list)
+# A single layer is enough, as only the grid geometry is used
+template <- rast(file.path(data_dir, "rasters", "orthomosaic_clip.tif"))[[1]]
+
+get_dtm <- function(ctg, pnt_cloud_name) {
+  dtm_path <- file.path(dtm_dir, paste0(pnt_cloud_name, "_dtm.tif"))
+
+  if (!overwrite && file.exists(dtm_path)) {
+    return(rast(dtm_path))
+  }
+
+  message("Creating DTM for ", pnt_cloud_name)
+  dtm <- rasterize_terrain(ctg, res = template, algorithm = tin())
+
+  writeRaster(
+    dtm,
+    dtm_path,
+    gdal = c("COMPRESS=DEFLATE", "PREDICTOR=3"),
+    overwrite = TRUE
+  )
+  gc()
+
+  rast(dtm_path)
+}
+
+catalogs <- c(list(MCC = cls_mcc, PMF = cls_pmf), cls_ptd_list)
+dtms <- Map(get_dtm, catalogs, names(catalogs))
+
+# Compare each DTM with the GNSS targets -----------------------------------
+# Bilinear interpolation of the DTM at each target location. Error is
+# DTM minus GNSS, so a positive error means the DTM is above the ground.
+targets_errors <- function(dtm, sf_pnts, elev_col, id_col, pnt_cloud_name) {
+  sf_pnts <- st_transform(sf_pnts, crs(dtm))
+
+  dtm_z <- terra::extract(
+    dtm,
+    vect(sf_pnts),
+    method = "bilinear",
+    ID = FALSE
+  )[[1]]
+
+  data.frame(
+    point_cloud = pnt_cloud_name,
+    id = sf_pnts[[id_col]],
+    gnss_z = sf_pnts[[elev_col]],
+    dtm_z = dtm_z,
+    error = dtm_z - sf_pnts[[elev_col]]
+  )
+}
+
+target_errors <- bind_rows(
+  unname(Map(
+    targets_errors,
+    dtms,
+    MoreArgs = list(sf_pnts = gnss_data, elev_col = elev_col, id_col = id_col),
+    pnt_cloud_name = names(dtms)
+  ))
 )
 
-# Compute comparative stats
-# - Percentage of incoherent points: column "n_pnts_last_incoherent"
-# - Mean RMSE: column "rmse_last"
-# - Max, Min and Mean thickness: column thickness
-comparative_stats <- bind_rows(
-  cls_mcc_metrics[["summarize"]],
-  cls_pmf_metrics[["summarize"]],
-  # unname() is required: bind_rows() treats a *named* list as a single row
-  # of list-columns instead of flattening it into one row per element
-  unname(lapply(cls_ptd_metrics_list, `[[`, "summarize"))
+# Only keep the targets covered by every DTM, so all methods are compared on
+# the same set of targets (targets outside the orthomosaic grid are dropped)
+common_ids <- target_errors |>
+  group_by(id) |>
+  filter(all(!is.na(error))) |>
+  pull(id) |>
+  unique()
+
+message(
+  length(common_ids), " of ", nrow(gnss_data),
+  " GNSS targets are covered by every DTM"
 )
+
+target_errors <- target_errors |>
+  mutate(common_target = id %in% common_ids)
+
+# Compute comparative stats
+# - n_targets: number of targets used
+# - mean_error: bias of the DTM (DTM - GNSS)
+# - sd_error, mae, rmse, max_abs_error: dispersion of the errors
+# - pct_incoherent_targets: targets whose absolute error exceeds the threshold
+comparative_stats <- target_errors |>
+  filter(common_target) |>
+  group_by(point_cloud) |>
+  summarise(
+    n_targets = n(),
+    mean_error = mean(error),
+    sd_error = sd(error),
+    mae = mean(abs(error)),
+    rmse = sqrt(mean(error^2)),
+    max_abs_error = max(abs(error)),
+    pct_incoherent_targets = 100 * mean(abs(error) > incoh_thresh_m)
+  ) |>
+  # Keep the order in which the classifications were defined
+  arrange(match(point_cloud, names(dtms)))
 
 comparative_stats
 
@@ -135,11 +164,17 @@ write.csv(
   row.names = FALSE
 )
 
-# Keep the PTD parameterization with the lowest mean RMSE to compare against
+write.csv(
+  target_errors,
+  file.path(root, "results", "evaluation", "lidar", "target_errors.csv"),
+  row.names = FALSE
+)
+
+# Keep the PTD parameterization with the lowest RMSE to compare against
 # MCC and PMF in the transect plot
 best_ptd_name <- comparative_stats |>
   filter(point_cloud %in% names(cls_ptd_list)) |>
-  slice_min(mean_rmse, n = 1) |>
+  slice_min(rmse, n = 1) |>
   pull(point_cloud)
 
 message("Best PTD parameterization: ", best_ptd_name[1])

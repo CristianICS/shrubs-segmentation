@@ -9,17 +9,13 @@ import os
 # with the other in this codebase, so allowing the duplicate is safe here.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
-from .utils import (
-    TextPromptPredictor, build_processor, parse_rgb_bands, process_input, sam3_autocast,
-)
+from .utils import TextPromptPredictor, build_processor, sam3_autocast
 from .training import FrozenBackboneTrainer, prepare_juniper_coco
 
 __all__ = [
     "FrozenBackboneTrainer",
     "TextPromptPredictor",
     "build_processor",
-    "parse_rgb_bands",
     "prepare_juniper_coco",
-    "process_input",
     "sam3_autocast",
 ]

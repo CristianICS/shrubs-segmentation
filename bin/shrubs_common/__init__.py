@@ -1,5 +1,11 @@
 """Model-agnostic evaluation metrics shared by the SAM 3 and Detectron2 pipelines."""
 
+from .evaluation import (
+    TEST_DATASETS,
+    EvaluationDataset,
+    EvaluationSettings,
+    check_dataset_inputs,
+)
 from .metrics import (
     METRIC_DEFINITIONS,
     Prediction,
@@ -27,12 +33,17 @@ try:
     # mrcnn_tf2 conda env, which has a Windows DLL conflict between its old
     # TensorFlow/Keras stack and GDAL). masks_to_features/write_window_masks
     # above have no rasterio dependency, so they stay usable even then.
-    from .tiling import iter_windows, read_rgb_window, starts
+    from .tiling import check_tiling_inputs, iter_windows, read_rgb_window, starts
 except ImportError:
-    iter_windows = read_rgb_window = starts = None
+    check_tiling_inputs = iter_windows = read_rgb_window = starts = None
 
 __all__ = [
+    "EvaluationDataset",
+    "EvaluationSettings",
     "METRIC_DEFINITIONS",
+    "TEST_DATASETS",
+    "check_dataset_inputs",
+    "check_tiling_inputs",
     "Prediction",
     "PredictionCache",
     "best_iou_matches",
