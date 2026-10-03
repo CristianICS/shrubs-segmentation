@@ -23,10 +23,12 @@ annotation GPKG) pass the layer with --layer.
 
 Example usage:
 
-python lidar_refine_masks.py results/predicted_shrub_masks.geojson \
+python Python/lidar_refine_masks.py results/deployment/shrub_map_detectron2.geojson \
   --chm data/rasters/encinacorba_chm.tif \
-  --output results/lidar_refined/predicted_shrub_masks.gpkg \
+  --output results/lidar_refined/model_detectron2.gpkg \
   --h-tall 1.7 --tall-fraction 0.1 --min-coverage 0.3
+
+`run_lidar_refinement.py` runs this for every model with these thresholds.
 """
 from __future__ import annotations
 
