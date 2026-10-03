@@ -538,9 +538,9 @@ python Python/refine_detections.py \
 
 ## Accuracy assessment
 
-After the deployment phase, each model's shrub map is scored against the manually digitized masks inside the field work plots. Those are the regions of 9 $m^2$ where the field campaings to digitize the masks were conducted. See `data/encinacorba_annotations.gpkg` `square_rois` and `field_work` layers.
+After the deployment phase, each model's shrub map is scored against the manually digitized masks inside the field work plots. Those are the regions of 9 $m^2$ where the field campaigns to digitize the masks were conducted. See `data/encinacorba_annotations.gpkg` `square_rois` and `field_work_masks` layers.
 
-The `field_work` reference layer contains 79 polygons: 58 shrub masks (`shrub == 1`, mean 3.2 $m^2$) and 21 tree masks to assess false positives (`shrub == 0`, mean 15.2 $m^2$). It's exhaustive shrub digitization within each plot, i.e., every shrub inside them was digitized, allowing the computation of the precision-recall metrics. A prediction inside the plot with no matching ground-reference shrub genuinely is a false positive. It scores by direct polygon-to-polygon matching, clipped to the `square_rois` plot geometries with no buffer, i.e., only masks actually inside the plot are scored.
+The `field_work_masks` reference layer contains 79 polygons: 58 shrub masks (`shrub == 1`, mean 3.2 $m^2$) and 21 tree masks to assess false positives (`shrub == 0`, mean 15.2 $m^2$). It's exhaustive shrub digitization within each plot, i.e., every shrub inside them was digitized, allowing the computation of the precision-recall metrics. A prediction inside a plot with no matching ground-reference shrub genuinely is a false positive. It scores by direct polygon-to-polygon matching, clipped to the `square_rois` plot geometries with no buffer, i.e., only masks actually inside the plots are scored.
 
 > Note: The reference layer also contains `esp_code` and `esp_scientific_name` columns with the species code and scientific name per mask.
 

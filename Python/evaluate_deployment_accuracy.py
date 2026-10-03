@@ -1,10 +1,10 @@
 """
 Score deployed, georeferenced shrub predictions against the manually
-digitized `field_work` ground truth.
+digitized `field_work_masks` ground truth.
 
-`field_work` (`data/encinacorba_annotations.gpkg`) exhaustively digitizes
-every shrub (`shrub == 1`) inside its plot, plus the trees (`shrub == 0`)
-there, as the false-positive-on-trees check.
+`field_work_masks` (`data/encinacorba_annotations.gpkg`) exhaustively digitizes
+every shrub (`shrub == 1`) inside the `square_rois` plots, plus the trees
+(`shrub == 0`) there, as the false-positive-on-trees check.
 
 Example usage (inside the `mrcnn_masks` environment):
 
@@ -56,7 +56,7 @@ REQUIRED_GT_COLUMNS = ("shrub", "Id", "esp_code")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Score deployed shrub predictions against manually digitized field_work polygons."
+        description="Score deployed shrub predictions against manually digitized field_work_masks polygons."
     )
     parser.add_argument(
         "--predictions", type=Path, nargs="+", default=[DEFAULT_PREDICTIONS],
@@ -72,7 +72,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--ground-truth", type=Path, default=DEFAULT_GROUND_TRUTH,
-        help="GeoPackage with the field_work and square_rois layers (default: %(default)s).",
+        help="GeoPackage with the field_work_masks and square_rois layers (default: %(default)s).",
     )
     parser.add_argument(
         "--layer", default="field_work_masks",
@@ -358,7 +358,7 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(summary)
 
-    print(f"\nGround truth: {len(gt_shrub)} shrub / {len(gt_tree)} tree polygons in the field_work plot.")
+    print(f"\nGround truth: {len(gt_shrub)} shrub / {len(gt_tree)} tree polygons in the square_rois plots.")
     for row in summary:
         print(
             f"  {row['model']}: precision={row['precision']}, recall={row['recall']}, f1={row['f1']}, "
