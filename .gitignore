@@ -16,6 +16,9 @@ paper/
 R/.Rhistory
 R/.Rproj.user
 R/R.Rproj
+R/preprocess_spectres.R
+R/create_square_rois.R
+R/characterize_rois.R
 results/deployment/**
 !results/deployment/README.md
 results/evaluation/deployment_accuracy/**
@@ -24,10 +27,14 @@ results/evaluation/lidar/**
 !results/evaluation/lidar/comparative_stats.csv
 !results/evaluation/lidar/target_errors.csv
 !results/evaluation/lidar/mask_height_stats.csv
+!results/evaluation/lidar/species_height_stats.csv
+!results/evaluation/lidar/growth_form_height_stats.csv
+!results/evaluation/lidar/transects.geojson
 results/lidar_refined/**
-!results/lidar_refined/README.md
 !results/lidar_refined/annotations_stats.csv
 !results/lidar_refined/summary.csv
+!results/lidar_refined/threshold_sweep.csv
+!results/lidar_refined/threshold_sweep_loo.csv
 results/evaluation/model_detectron2
 results/evaluation/model_matterport
 results/evaluation/model_sam3

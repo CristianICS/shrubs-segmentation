@@ -352,29 +352,6 @@
       "Author": "Tony Plate [aut, cre], Richard Heiberger [aut]",
       "Repository": "CRAN"
     },
-    "asdreader": {
-      "Package": "asdreader",
-      "Version": "0.1-3",
-      "Source": "Repository",
-      "Type": "Package",
-      "Title": "Reading ASD Binary Files in R",
-      "Date": "2017-09-13",
-      "Authors@R": "c( person(\"Pierre\", \"Roudier\", email = \"roudierp@landcareresearch.co.nz\", role = c(\"aut\", \"cre\")), person(\"Etienne\", \"Lalibert'{e}\", email = NULL, role = c(\"ctb\")) )",
-      "Description": "A simple driver that reads binary data created by the ASD Inc. portable spectrometer instruments, such as the FieldSpec (for more information, see <http://www.asdi.com/products/fieldspec-spectroradiometers>). Spectral data can be extracted from the ASD files as raw (DN), white reference, radiance, or reflectance. Additionally, the metadata information contained in the ASD file header can also be accessed.",
-      "URL": "http://github.com/pierreroudier/asdreader",
-      "BugReports": "http://github.com/pierreroudier/asdreader/issues",
-      "Depends": [
-        "R (>= 3.0)"
-      ],
-      "License": "GPL-3",
-      "LazyData": "TRUE",
-      "Collate": "'get-metadata.r' 'get-spectrum.r' 'asdreader.r' 'data.r'",
-      "RoxygenNote": "6.0.1",
-      "NeedsCompilation": "no",
-      "Author": "Pierre Roudier [aut, cre], Etienne Lalibert'{e} [ctb]",
-      "Maintainer": "Pierre Roudier <roudierp@landcareresearch.co.nz>",
-      "Repository": "CRAN"
-    },
     "base64enc": {
       "Package": "base64enc",
       "Version": "0.1-6",
@@ -1768,49 +1745,6 @@
       "Author": "Jean-Romain Roussel [aut, cre, cph], David Auty [aut, ctb] (Reviews the documentation), Florian De Boissieu [ctb] (Fixed bugs and improved catalog features), Andrew Sánchez Meador [ctb] (Implemented wing2015() for segment_snags()), Bourdon Jean-François [ctb] (Contributed to Roussel2020() for track_sensor()), Gatziolis Demetrios [ctb] (Implemented Gatziolis2019() for track_sensor()), Leon Steinmeier [ctb] (Contributed to parallelization management), Stanislaw Adaszewski [cph] (Author of the C++ concaveman code), Benoît St-Onge [cph] (Author of the 'chm_prep' function)",
       "Maintainer": "Jean-Romain Roussel <info@r-lidar.com>"
     },
-    "lidaynight": {
-      "Package": "lidaynight",
-      "Version": "0.0.0.9000",
-      "Source": "GitHub",
-      "Title": "Conduct a LiDAR Day/Night Comparison Study",
-      "Authors@R": "person(\"Cristian\", \"Iranzo\", , \"c.iranzo@unizar.es\", role = c(\"aut\", \"cre\"), comment = c(ORCID = \"0000-0002-3359-6213\"))",
-      "Description": "Contains functions and data to produce statistic files and report documents comparing day and night LiDAR flights.",
-      "License": "Apache License (>= 2.0)",
-      "Encoding": "UTF-8",
-      "Roxygen": "list(markdown = TRUE)",
-      "Imports": [
-        "data.table",
-        "dplyr",
-        "tidyr",
-        "ggplot2",
-        "fs",
-        "future",
-        "lidR (>= 4.3.0)",
-        "readr",
-        "tibble",
-        "rlas (>= 1.8.2)",
-        "sf",
-        "stringr",
-        "tools",
-        "utils",
-        "vctrs (>= 0.7.1)"
-      ],
-      "Remotes": "r-lidar/rlas, r-lidar/lidR",
-      "Config/roxygen2/version": "8.1.0",
-      "RemoteType": "github",
-      "RemoteHost": "api.github.com",
-      "RemoteRepo": "lidaynight",
-      "RemoteUsername": "CristianICS",
-      "RemotePkgRef": "CristianICS/lidaynight",
-      "RemoteRef": "HEAD",
-      "RemoteSha": "efb8fc3d505968a7d98f3b10790a4a887a9cd116",
-      "NeedsCompilation": "no",
-      "Author": "Cristian Iranzo [aut, cre] (ORCID: <https://orcid.org/0000-0002-3359-6213>)",
-      "Maintainer": "Cristian Iranzo <c.iranzo@unizar.es>",
-      "Depends": [
-        "R (>= 4.1.0)"
-      ]
-    },
     "lifecycle": {
       "Package": "lifecycle",
       "Version": "1.0.5",
@@ -2115,43 +2049,6 @@
       "BugReports": "https://github.com/r-lib/pkgconfig/issues",
       "Encoding": "UTF-8",
       "NeedsCompilation": "no",
-      "Repository": "CRAN"
-    },
-    "plyr": {
-      "Package": "plyr",
-      "Version": "1.8.9",
-      "Source": "Repository",
-      "Title": "Tools for Splitting, Applying and Combining Data",
-      "Authors@R": "person(\"Hadley\", \"Wickham\", , \"hadley@rstudio.com\", role = c(\"aut\", \"cre\"))",
-      "Description": "A set of tools that solves a common set of problems: you need to break a big problem down into manageable pieces, operate on each piece and then put all the pieces back together.  For example, you might want to fit a model to each spatial location or time point in your study, summarise data by panels or collapse high-dimensional arrays to simpler summary statistics. The development of 'plyr' has been generously supported by 'Becton Dickinson'.",
-      "License": "MIT + file LICENSE",
-      "URL": "http://had.co.nz/plyr, https://github.com/hadley/plyr",
-      "BugReports": "https://github.com/hadley/plyr/issues",
-      "Depends": [
-        "R (>= 3.1.0)"
-      ],
-      "Imports": [
-        "Rcpp (>= 0.11.0)"
-      ],
-      "Suggests": [
-        "abind",
-        "covr",
-        "doParallel",
-        "foreach",
-        "iterators",
-        "itertools",
-        "tcltk",
-        "testthat"
-      ],
-      "LinkingTo": [
-        "Rcpp"
-      ],
-      "Encoding": "UTF-8",
-      "LazyData": "true",
-      "RoxygenNote": "7.2.3",
-      "NeedsCompilation": "yes",
-      "Author": "Hadley Wickham [aut, cre]",
-      "Maintainer": "Hadley Wickham <hadley@rstudio.com>",
       "Repository": "CRAN"
     },
     "prettyunits": {
@@ -2810,37 +2707,6 @@
       "NeedsCompilation": "yes",
       "Author": "Edzer Pebesma [aut, cre] (ORCID: <https://orcid.org/0000-0001-8049-7069>), Roger Bivand [ctb] (ORCID: <https://orcid.org/0000-0003-2392-6140>), Etienne Racine [ctb], Michael Sumner [ctb], Ian Cook [ctb], Tim Keitt [ctb], Robin Lovelace [ctb], Hadley Wickham [ctb], Jeroen Ooms [ctb] (ORCID: <https://orcid.org/0000-0002-4035-0289>), Kirill Müller [ctb], Thomas Lin Pedersen [ctb], Dan Baston [ctb], Dewey Dunnington [ctb] (ORCID: <https://orcid.org/0000-0002-9415-4582>), Alexandre Courtiol [ctb] (ORCID: <https://orcid.org/0000-0003-0637-2959>)",
       "Maintainer": "Edzer Pebesma <edzer.pebesma@uni-muenster.de>",
-      "Repository": "CRAN"
-    },
-    "signal": {
-      "Package": "signal",
-      "Version": "1.8-1",
-      "Source": "Repository",
-      "Title": "Signal Processing",
-      "Date": "2024-06-13",
-      "Authors@R": "c(person(\"Uwe\", \"Ligges\", role = c(\"aut\", \"cre\"), email=\"ligges@statistik.tu-dortmund.de\", comment = \"new maintainer\"), person(\"Tom\", \"Short\", role = \"aut\", email = \"tshort@eprisolutions.com\", comment=\"port to R\"), person(\"Paul\", \"Kienzle\", role = \"aut\", comment=\"majority of the original sources\"), person(\"Sarah\", \"Schnackenberg\", role = \"ctb\", comment=\"various test cases and bug fixes\"), person(\"David\", \"Billinghurst\", role = \"ctb\"), person(\"Hans-Werner\", \"Borchers\", role = \"ctb\"), person(\"Andre\", \"Carezia\", role = \"ctb\"), person(\"Pascal\", \"Dupuis\", role = \"ctb\"), person(\"John W.\", \"Eaton\", role = \"ctb\"), person(\"E.\", \"Farhi\", role = \"ctb\"), person(\"Kai\", \"Habel\", role = \"ctb\"), person(\"Kurt\", \"Hornik\", role = \"ctb\"), person(\"Sebastian\", \"Krey\", role = \"ctb\"), person(\"Bill\", \"Lash\", role = \"ctb\"), person(\"Friedrich\", \"Leisch\", role = \"ctb\"), person(\"Olaf\", \"Mersmann\", role = \"ctb\"), person(\"Paulo\", \"Neis\", role = \"ctb\"), person(\"Jaakko\", \"Ruohio\", role = \"ctb\"), person(\"Julius O.\", \"Smith III\", role = \"ctb\"),                   \t    person(\"Doug\", \"Stewart\", role = \"ctb\"), person(\"Andreas\", \"Weingessel\", role = \"ctb\"))",
-      "Depends": [
-        "R (>= 3.5.0)"
-      ],
-      "Imports": [
-        "MASS",
-        "graphics",
-        "grDevices",
-        "stats",
-        "utils"
-      ],
-      "Suggests": [
-        "pracma"
-      ],
-      "Enhances": [
-        "matlab"
-      ],
-      "Description": "A set of signal processing functions originally written for 'Matlab' and 'Octave'. Includes filter generation utilities, filtering functions, resampling routines, and visualization of filter models. It also includes interpolation functions.",
-      "License": "GPL-2",
-      "URL": "https://signal.R-forge.R-project.org",
-      "NeedsCompilation": "yes",
-      "Author": "Uwe Ligges [aut, cre] (new maintainer), Tom Short [aut] (port to R), Paul Kienzle [aut] (majority of the original sources), Sarah Schnackenberg [ctb] (various test cases and bug fixes), David Billinghurst [ctb], Hans-Werner Borchers [ctb], Andre Carezia [ctb], Pascal Dupuis [ctb], John W. Eaton [ctb], E. Farhi [ctb], Kai Habel [ctb], Kurt Hornik [ctb], Sebastian Krey [ctb], Bill Lash [ctb], Friedrich Leisch [ctb], Olaf Mersmann [ctb], Paulo Neis [ctb], Jaakko Ruohio [ctb], Julius O. Smith III [ctb], Doug Stewart [ctb], Andreas Weingessel [ctb]",
-      "Maintainer": "Uwe Ligges <ligges@statistik.tu-dortmund.de>",
       "Repository": "CRAN"
     },
     "stars": {

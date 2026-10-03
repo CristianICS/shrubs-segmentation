@@ -1,0 +1,11 @@
+{
+"type": "FeatureCollection",
+"name": "transects",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::25830" } },
+"features": [
+{ "type": "Feature", "properties": { "transect_id": 1 }, "geometry": { "type": "LineString", "coordinates": [ [ 643250.000250000040978, 4567749.999699999578297 ], [ 643281.250212500104681, 4567718.749749999493361 ] ] } },
+{ "type": "Feature", "properties": { "transect_id": 2 }, "geometry": { "type": "LineString", "coordinates": [ [ 643281.250212500104681, 4567718.749749999493361 ], [ 643312.500175000051968, 4567687.499800000339746 ] ] } },
+{ "type": "Feature", "properties": { "transect_id": 3 }, "geometry": { "type": "LineString", "coordinates": [ [ 643312.500175000051968, 4567687.499800000339746 ], [ 643343.750137499999255, 4567656.24985000025481 ] ] } },
+{ "type": "Feature", "properties": { "transect_id": 4 }, "geometry": { "type": "LineString", "coordinates": [ [ 643343.750137499999255, 4567656.24985000025481 ], [ 643375.000100000062957, 4567624.999900000169873 ] ] } }
+]
+}
