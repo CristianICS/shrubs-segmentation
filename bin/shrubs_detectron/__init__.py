@@ -1,8 +1,8 @@
 from .utils import DatasetSpec
 from .utils import inspect_dataset
 from .utils import register_juniper_dataset
-from .test import normalize_dataset
-from .test import validate_dataset
+from .validation import normalize_dataset
+from .validation import validate_dataset
 from .predictor import ScaleMatchedPredictor
 from .predictor import build_inference_cfg
 

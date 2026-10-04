@@ -1,5 +1,5 @@
 """
-Test the original JSON against registered records
+Validate the original JSON against registered records
 
 They do not expose the same organization if the original JSON has
 one annotation per image containing many shrub polygons.
@@ -12,7 +12,7 @@ For example, if validation results showed:
 an evaluator reading the original JSON directly could interpret the
 dataset as 67 objects instead of 660 shrubs.
 
-Test this at three levels:
+Check this at three levels:
 
 A. Compare global counts
 B. Compare counts per image

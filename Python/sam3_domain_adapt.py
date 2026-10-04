@@ -139,8 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--num-workers", type=int, default=4,
-        help="Dataloader worker processes. Set to 0 if Windows multiprocessing "
-             "causes issues (default: %(default)s).",
+        help="Dataloader worker processes (default: %(default)s).",
     )
     parser.add_argument(
         "--device", choices=("cuda", "cpu"), default="cuda",
@@ -193,13 +192,9 @@ def _default_bpe_path() -> Path:
 
 
 def _to_override(path: Path) -> str:
-    """Quote a Windows path as a Hydra override value.
-
-    Forward slashes avoid backslash-escaping issues in Hydra's override
-    grammar; the surrounding quotes stop the drive letter's `:` from being
-    parsed as part of that grammar instead of the path.
-    """
-    return "'" + str(path).replace("\\", "/") + "'"
+    """Quote a path as a Hydra override value, so characters such as spaces
+    aren't parsed as part of Hydra's override grammar."""
+    return f"'{path}'"
 
 
 def _free_port() -> int:
@@ -245,12 +240,8 @@ def main(argv: list[str] | None = None) -> int:
         f"scratch.train_batch_size={args.batch_size}",
         f"scratch.num_train_workers={args.num_workers}",
     ]
-    # nccl (the config default) needs CUDA and has no Windows build at all;
-    # fall back to gloo for a CPU run or on native Windows (where gloo also
-    # needs the libuv workaround documented in environment_sam3.yml). Linux
-    # CUDA runs -- including WSL2, the recommended way to run this script --
-    # keep the nccl default untouched.
-    if args.device == "cpu" or sys.platform == "win32":
+    # nccl (the config default) needs CUDA; fall back to gloo for a CPU run
+    if args.device == "cpu":
         overrides.append("trainer.distributed.backend=gloo")
     if args.checkpoint is not None:
         overrides.append(f"trainer.model.checkpoint_path={_to_override(args.checkpoint)}")
@@ -272,12 +263,6 @@ def main(argv: list[str] | None = None) -> int:
     # Single local process, matching sam3.train.train's `single_proc_run` for
     # a one-GPU (or CPU) job: no submitit/SLURM launcher is wired in here,
     # since domain adaptation on JuniperMapper's size doesn't need a cluster.
-    #
-    # A literal loopback IP is used instead of the "localhost" hostname:
-    # PyTorch's gloo backend resolves MASTER_ADDR to a network device via
-    # makeDeviceForHostname, which fails on Windows for "localhost" specifically
-    # (RuntimeError: makeDeviceForHostname(): unsupported gloo device) even
-    # though the process group has only one member.
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(_free_port())
     os.environ["RANK"] = "0"

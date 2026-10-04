@@ -3,9 +3,8 @@ Calibrate the LiDAR refinement thresholds on the field-reference masks.
 
 Runs `lidar_refine_masks.refine` on the annotated masks for every combination
 of `--h-tall` and `--tall-fraction` and counts, per growth form (tree / shrub),
-how many masks end up in each status. Growth forms come from the `label` column
-of `data/spectral_signatures/veg_codes.csv` (1 tree, 0 shrub), as in
-`R/mask_height_stats.R`.
+how many masks end up in each status. Growth forms come from the `shrub` column
+of the annotations (1 shrub, 0 tree), as in `R/mask_height_stats.R`.
 
 A tree is counted as rejected when its status is `tree` (directly or because
 almost nothing was left after clipping); the same status on a shrub is a loss.
@@ -99,8 +98,6 @@ def main() -> None:
     parser.add_argument("--layer", default="field_work_masks")
     parser.add_argument("--rois-layer", default="square_rois")
     parser.add_argument("--chm", type=Path, default=ROOT / "data" / "rasters" / "encinacorba_chm.tif")
-    parser.add_argument("--veg-codes", type=Path,
-                        default=ROOT / "data" / "spectral_signatures" / "veg_codes.csv")
     parser.add_argument("--output", type=Path,
                         default=ROOT / "results" / "lidar_refined" / "threshold_sweep.csv",
                         help="Sweep table; the leave-one-ROI-out table is saved next to it.")
@@ -115,8 +112,7 @@ def main() -> None:
     args = parser.parse_args()
 
     masks = gpd.read_file(args.annotations, layer=args.layer)
-    veg_codes = pd.read_csv(args.veg_codes)
-    form = masks["esp_code"].map(veg_codes.set_index("code")["label"]).map({0: "shrub", 1: "tree"})
+    form = masks["shrub"].map({1: "shrub", 0: "tree"})
     rois = gpd.read_file(args.annotations, layer=args.rois_layer).to_crs(masks.crs)
     roi = assign_rois(masks, rois)
 

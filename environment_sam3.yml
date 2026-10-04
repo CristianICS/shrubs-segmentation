@@ -11,23 +11,10 @@ dependencies:
   - einops
   # SAM 3 imports the deprecated pkg_resources module.
   - setuptools<81
-  # Only actually required on Windows -- torch.distributed there (needed by
-  # sam3_domain_adapt.py's trainer, which always sets up a process group even
-  # for a single local process) requires this to be present; see the torch
-  # 2.11 release notes and https://github.com/pytorch/pytorch/issues/150381.
-  # Harmless to install on Linux/WSL2 too, so it isn't conditioned out.
-  - libuv=1.51
   - pip
   - pip:
       - --extra-index-url https://download.pytorch.org/whl/cu128
       - pillow
-      # torch<2.11 on Windows builds Gloo with USE_LIBUV disabled, which
-      # breaks torch.distributed.init_process_group with
-      # "RuntimeError: makeDeviceForHostname(): unsupported gloo device"
-      # even for a single-process group (needed by sam3_domain_adapt.py).
-      # Fixed upstream in https://github.com/pytorch/gloo/pull/472, first
-      # released in torch 2.11. Kept at 2.11 on Linux too, for one shared
-      # environment file and one known-working version across platforms.
       - torch==2.11.0
       - torchvision
       - pycocotools>=2.0.11
@@ -39,11 +26,6 @@ dependencies:
       # numpy>=2 (opencv-python 4.12+ requires numpy>=2 on Python 3.9+,
       # conflicting with sam3's own numpy<2 pin).
       - opencv-python==4.11.0.86
-      # SAM 3 imports Triton; PyTorch 2.11 still requires the Triton 3.6
-      # line. Official Triton is Linux-only (and is the one actually used
-      # for training under WSL2; the Windows wheel is a third-party port used
-      # only for native-Windows zero-shot inference and is not validated for the
-      # torch.compile-heavy paths sam3_domain_adapt.py exercises.
-      - "triton==3.6.0; sys_platform == 'linux'"
-      - "triton-windows>=3.6,<3.7; sys_platform == 'win32'"
+      # SAM 3 imports Triton; PyTorch 2.11 requires the Triton 3.6 line.
+      - triton==3.6.0
       - "sam3[train] @ git+https://github.com/facebookresearch/sam3.git"

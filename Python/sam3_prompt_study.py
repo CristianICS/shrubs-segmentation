@@ -21,7 +21,6 @@ import argparse
 import csv
 import json
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -109,19 +108,14 @@ def check_inputs(args: argparse.Namespace) -> None:
 
 def _link_checkpoint(checkpoint: Path, save_dir: Path) -> None:
     """Expose `checkpoint` as `<save_dir>/checkpoint.pt`, the file the trainer
-    resumes from. A symlink avoids copying the ~3.6 GB file; fall back to a
-    copy where symlinks aren't allowed (e.g. native Windows without
-    developer mode)."""
+    resumes from. A symlink avoids copying the ~3.6 GB file."""
     save_dir.mkdir(parents=True, exist_ok=True)
     target = save_dir / "checkpoint.pt"
     if target.is_symlink() or target.exists():
         if target.resolve() == checkpoint.resolve():
             return
         target.unlink()
-    try:
-        target.symlink_to(checkpoint)
-    except OSError:
-        shutil.copyfile(checkpoint, target)
+    target.symlink_to(checkpoint.resolve())
 
 
 def score_prompt(prompt: str, args: argparse.Namespace, bpe_path: Path) -> dict[str, float]:
@@ -155,8 +149,6 @@ def score_prompt(prompt: str, args: argparse.Namespace, bpe_path: Path) -> dict[
             # release checkpoint is never needed.
             "trainer.model.load_from_HF=false",
         ]
-        if sys.platform == "win32":
-            overrides.append("trainer.distributed.backend=gloo")
 
         GlobalHydra.instance().clear()
         initialize_config_dir(config_dir=str(CONFIG_DIR), version_base="1.2")

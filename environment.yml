@@ -4,14 +4,14 @@ channels:
 dependencies:
     # GeoSeries.union_all() (evaluate_deployment_accuracy.py) needs geopandas >= 1.0
     - geopandas>=1.0
-    - rasterio
+    - rasterio=1.5.0
     # Pure-Python affine transforms (refine_detections.py)
-    - affine
-    - numpy
-    - shapely
-    - pyproj
-    - opencv
-    - gdal
-    - pycocotools
+    - affine=2.4.0
+    - numpy=2.5.1
+    - shapely=2.1.2
+    - pyproj=3.7.2
+    - opencv=5.0.0
+    - gdal=3.12.3
+    - pycocotools=2.0.11
     # Writes the PNG windows in tile_orthomosaic.py
-    - pillow
+    - pillow=12.3.0

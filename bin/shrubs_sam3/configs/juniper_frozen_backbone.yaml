@@ -239,12 +239,8 @@ trainer:
   gradient_accumulation_steps: ${scratch.gradient_accumulation_steps}
 
   distributed:
-    # nccl is the standard, well-tested backend for single/multi-GPU CUDA
-    # training on Linux (including WSL2, the recommended way to run this
-    # script -- see "SAM 3 training on WSL2" in README.md). sam3_domain_adapt.py
-    # overrides this to gloo itself for a CPU run, or when it detects it's
-    # running on native Windows, where nccl has no build at all and even
-    # gloo needs a libuv-related workaround (see environment_sam3.yml).
+    # nccl is the standard backend for CUDA training on Linux (WSL2).
+    # sam3_domain_adapt.py overrides this to gloo for a CPU run.
     backend: nccl
     find_unused_parameters: True
     gradient_as_bucket_view: True

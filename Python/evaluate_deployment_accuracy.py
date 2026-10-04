@@ -6,6 +6,15 @@ digitized `field_work_masks` ground truth.
 every shrub (`shrub == 1`) inside the `square_rois` plots, plus the trees
 (`shrub == 0`) there, as the false-positive-on-trees check.
 
+The reference polygons are whole objects, and most of them extend beyond the
+plots, so geometries are never clipped:
+
+- Every reference polygon is matched against all predictions (whole geometries).
+- A matched prediction is a true positive wherever it lies.
+- An unmatched prediction is a false positive only if at least --min-plot-share
+  of its area lies inside the plots, where digitization is exhaustive. Outside
+  them, an unmatched prediction may be a real shrub that was not digitized.
+
 Example usage (inside the `mrcnn_masks` environment):
 
 python Python/evaluate_deployment_accuracy.py
@@ -88,7 +97,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--plot-buffer", type=float, default=0.0,
-        help="Metres to buffer the square_rois geometries by when clipping predictions (default: %(default)s, i.e. no buffer).",
+        help="Metres to buffer the square_rois geometries by (default: %(default)s, i.e. no buffer).",
+    )
+    parser.add_argument(
+        "--min-plot-share", type=float, default=0.5,
+        help="Minimum share of an unmatched prediction's area inside the plots to count it "
+             "as a false positive (default: %(default)s).",
     )
     parser.add_argument(
         "--iou-threshold", type=float, default=0.1,
@@ -144,6 +158,8 @@ def check_inputs(args: argparse.Namespace) -> None:
         raise ValueError(f"--iou-threshold must be in (0, 1], got {args.iou_threshold}.")
     if args.plot_buffer < 0:
         raise ValueError(f"--plot-buffer must be non-negative, got {args.plot_buffer}.")
+    if not 0 < args.min_plot_share <= 1:
+        raise ValueError(f"--min-plot-share must be in (0, 1], got {args.min_plot_share}.")
 
 
 def check_ground_truth_columns(gt: gpd.GeoDataFrame, layer: str) -> None:
@@ -262,11 +278,17 @@ def evaluate_model(
     gt_tree: gpd.GeoDataFrame,
     plot_geometry: BaseGeometry,
     iou_threshold: float,
+    min_plot_share: float,
     output_dir: Path,
     sam3_prompt: str | None = None,
 ) -> dict:
     predictions = gpd.read_file(predictions_path).to_crs(gt_shrub.crs)
-    predictions = predictions[predictions.intersects(plot_geometry)].reset_index(drop=True)
+    # Only predictions touching a reference polygon can be matched, and only
+    # those touching a plot can be false positives; the rest never count.
+    gt_geometry = gpd.GeoSeries(list(gt_shrub.geometry) + list(gt_tree.geometry)).union_all()
+    reachable = predictions.intersects(gt_geometry) | predictions.intersects(plot_geometry)
+    predictions = predictions[reachable].reset_index(drop=True)
+    plot_share = (predictions.geometry.intersection(plot_geometry).area / predictions.geometry.area).tolist()
 
     shrub_records, matched_by_shrub = match_ground_truth(gt_shrub, predictions, iou_threshold)
     tree_records, matched_by_tree = match_ground_truth(gt_tree, predictions, iou_threshold)
@@ -275,19 +297,25 @@ def evaluate_model(
     n_matched_tree = sum(record["matched"] for record in tree_records)
     matched_ious = [record["best_iou"] for record in shrub_records if record["matched"]]
 
-    # Exhaustive shrub digitization means every in-plot prediction not matched
-    # to a real shrub is a genuine false positive, whether or not it happens
-    # to land on a digitized tree.
+    # Exhaustive shrub digitization means every unmatched prediction lying
+    # mostly inside the plots is a genuine false positive, whether or not it
+    # happens to land on a digitized tree.
     true_positives = len(matched_by_shrub)
-    false_positives = len(predictions) - true_positives
-    false_negatives = len(gt_shrub) - n_matched_shrub
-    precision = true_positives / len(predictions) if len(predictions) else None
-    recall = n_matched_shrub / len(gt_shrub) if len(gt_shrub) else None
-    f1 = (
-        2 * precision * recall / (precision + recall)
-        if precision and recall and (precision + recall) > 0
-        else None
+    false_positives = sum(
+        1 for pos, share in enumerate(plot_share)
+        if share >= min_plot_share and pos not in matched_by_shrub
     )
+    false_negatives = len(gt_shrub) - n_matched_shrub
+    n_scored = true_positives + false_positives
+    precision = true_positives / n_scored if n_scored else None
+    recall = n_matched_shrub / len(gt_shrub) if len(gt_shrub) else None
+    # F1 is undefined only when precision or recall is; it is 0 when either is 0
+    if precision is None or recall is None:
+        f1 = None
+    elif precision + recall == 0:
+        f1 = 0.0
+    else:
+        f1 = 2 * precision * recall / (precision + recall)
 
     detail_fieldnames = ["gt_id", "esp_code", "class", "matched", "best_iou"]
     if sam3_prompt is not None:
@@ -312,7 +340,7 @@ def evaluate_model(
         "sam3_prompt": sam3_prompt,
         "n_gt_shrub": len(gt_shrub),
         "n_matched_shrub": n_matched_shrub,
-        "n_predictions_in_plot": len(predictions),
+        "n_predictions_scored": n_scored,
         "true_positives": true_positives,
         "false_positives": false_positives,
         "false_negatives": false_negatives,
@@ -349,7 +377,8 @@ def main() -> None:
         print(f"Evaluating {run_name}: {predictions_path}")
         summary.append(evaluate_model(
             run_name, model_label(run_name), predictions_path, gt_shrub, gt_tree, plot_geometry,
-            args.iou_threshold, args.output_dir, sam3_prompt=sam3_prompts.get(run_name),
+            args.iou_threshold, args.min_plot_share, args.output_dir,
+            sam3_prompt=sam3_prompts.get(run_name),
         ))
 
     summary_path = args.output_dir / "summary.csv"
