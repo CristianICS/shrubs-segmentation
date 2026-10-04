@@ -36,14 +36,18 @@ cls_mcc <- readLAScatalog(cls_mcc_path)
 cls_pmf <- readLAScatalog(cls_pmf_path)
 cls_ptd_list <- lapply(cls_ptd_paths, readLAScatalog)
 
-# Use the GNSS elevation data to assess the ground classification
-gnss_data_path <- file.path(
-  data_dir,
-  "spectral_signatures",
-  "spec_locations.geojson"
+# Use the GNSS elevation data to assess the ground classification. Each
+# `square_rois` plot stores the GNSS position (easting, northing) and
+# orthometric height of the target at its centre
+rois <- st_read(
+  file.path(data_dir, "encinacorba_annotations.gpkg"),
+  layer = "square_rois"
 )
-
-gnss_data <- st_read(gnss_data_path)
+gnss_data <- st_as_sf(
+  st_drop_geometry(rois),
+  coords = c("easting", "northing"),
+  crs = st_crs(rois)
+)
 elev_col <- "height_ortho"
 id_col <- "id"
 

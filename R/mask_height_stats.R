@@ -78,15 +78,24 @@ species_table <- do.call(
 )
 rownames(species_table) <- NULL
 
-# Add the species names from the vegetation codes lookup table
-veg_codes <- read.csv(
-  file.path(root, "data", "spectral_signatures", "veg_codes.csv")
+# Species name and growth form of each species code, from the mask attributes.
+# The `shrub` column codes shrubs as 1 and trees as 0
+species_info <- unique(
+  as.data.frame(masks)[, c("esp_code", "esp_scientific_name", "shrub")]
 )
+if (anyDuplicated(species_info$esp_code)) {
+  stop("Some esp_code values have more than one species name or shrub value.")
+}
+species_info$growth_form <- ifelse(species_info$shrub == 1, "shrub", "tree")
+names(species_info)[
+  names(species_info) == "esp_scientific_name"
+] <- "scientific_name"
+
+# Add the species names
 species_table <- merge(
   species_table,
-  veg_codes[, c("code", "name", "scientific_name")],
-  by.x = "esp_code",
-  by.y = "code",
+  species_info[, c("esp_code", "scientific_name")],
+  by = "esp_code",
   all.x = TRUE,
   sort = FALSE
 )
@@ -100,19 +109,7 @@ write.csv(species_table, species_out_path, row.names = FALSE)
 message("Table saved to: ", species_out_path)
 
 # Group height stats by growth form (tree / shrub) ----------------------------
-# The `label` column of the lookup table codes trees as 1 and shrubs as 0
-# (2 marks non-vegetation classes)
-label_names <- c("0" = "shrub", "1" = "tree", "2" = "non-vegetation")
-
-valid_masks <- merge(
-  valid_masks,
-  veg_codes[, c("code", "label")],
-  by.x = "esp_code",
-  by.y = "code",
-  all.x = TRUE,
-  sort = FALSE
-)
-valid_masks$growth_form <- unname(label_names[as.character(valid_masks$label)])
+valid_masks$growth_form <- ifelse(valid_masks$shrub == 1, "shrub", "tree")
 
 growth_form_table <- do.call(
   rbind,
@@ -146,11 +143,9 @@ species_table$scientific_name <- reorder(
 )
 
 # Colour the bars by growth form: dark green for trees, pastel green for shrubs
-species_table$growth_form <- unname(
-  label_names[as.character(
-    veg_codes$label[match(species_table$esp_code, veg_codes$code)]
-  )]
-)
+species_table$growth_form <- species_info$growth_form[
+  match(species_table$esp_code, species_info$esp_code)
+]
 growth_form_colours <- c(tree = "#2E6B34", shrub = "#B7DDB0")
 
 # Labels sit inside the bars, except for those too short to hold the text;
@@ -191,15 +186,9 @@ message("Plot saved to: ", plot_path)
 # Same bars as above, with the mean height of each individual mask overlaid as
 # points. Only vertical jitter is used so the x position of each point keeps the
 # exact mean height of its mask
-mask_points <- merge(
-  valid_masks,
-  veg_codes[, c("code", "scientific_name")],
-  by.x = "esp_code",
-  by.y = "code",
-  all.x = TRUE
-)
+mask_points <- valid_masks
 mask_points$scientific_name <- factor(
-  mask_points$scientific_name,
+  mask_points$esp_scientific_name,
   levels = levels(species_table$scientific_name)
 )
 

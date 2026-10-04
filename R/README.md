@@ -31,7 +31,7 @@ Rscript R/ground_cls.R
 | Progressive Morphological Filter (PMF) | Window sizes 3 to 12 m, height thresholds 0.1 to 1.5 m |
 | Progressive TIN Densification (PTD) | Three angle/distance combinations: 30°/2 m, 30°/3 m and 40°/3 m |
 
-Then, the script `validate_ground_cls.R` compares each classified point cloud with the GNSS orthometric height of the field targets (`data/spectral_signatures/spec_locations.geojson`).
+Then, the script `validate_ground_cls.R` compares each classified point cloud with the GNSS orthometric height of the field targets. These are the centres of the 26 field plots (`easting`, `northing` and `height_ortho` columns of the `square_rois` layer in `data/encinacorba_annotations.gpkg`).
 
 For every classification, it builds a DTM with TIN method on the orthomosaic grid. It then samples each DTM at the targets with bilinear interpolation. The error is the DTM height minus the GNSS height. Only the targets covered by every DTM are used, so all methods are compared on the same targets. It writes the following files inside `results/evaluation/lidar`:
 
