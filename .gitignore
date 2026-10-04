@@ -35,9 +35,10 @@ results/lidar_refined/**
 !results/lidar_refined/summary.csv
 !results/lidar_refined/threshold_sweep.csv
 !results/lidar_refined/threshold_sweep_loo.csv
-results/evaluation/model_detectron2
-results/evaluation/model_matterport
-results/evaluation/model_sam3
+results/evaluation/model_*/**
+!results/evaluation/model_*/**/
+!results/evaluation/model_*/**/siou_threshold_50.csv
+!results/evaluation/model_sam3/prompt_study_pi_val.csv
 results/*.pdf
 Rplots.pdf
 .Rproj.user

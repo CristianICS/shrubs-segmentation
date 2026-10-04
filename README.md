@@ -22,6 +22,23 @@ The segmented masks were assessed with a manually digitized masks, inspected dur
 
 One of the aims of the study is to test if a shrub dataset outside the study area could be valid to segmentate other type of shrubs in a different environment.
 
+### Data availability
+
+The field annotations (`data/encinacorba_annotations.gpkg`) are included in this repository. The `field_work_masks` layer holds the digitized reference masks, with each mask's species and growth form. The `square_rois` layer holds the 26 field plots covered by the orthomosaic, with the GNSS position and orthometric height of each plot centre.
+
+The following files are not included because of their size. They are available from the corresponding author on reasonable request. Place them at the paths below so the scripts find them with their default arguments.
+
+| File | Path | Used by |
+| ---- | ---- | ------- |
+| RGB orthomosaic (5 cm) | `data/rasters/orthomosaic_clip.tif` | Deployment, DTM grid |
+| LiDAR point cloud | `data/point_cloud/encinacorba_cloud.laz` | Ground classification, DTM and CHM ([R/README.md](R/README.md)) |
+| Canopy height model (0.25 m) | `data/rasters/encinacorba_chm.tif` | LiDAR refinement. Can be rebuilt from the point cloud |
+| Detectron2 weights | `data/logs/detectron2/model_best.pth` | Detectron2 validation and deployment |
+| Matterport weights | `data/logs/matterport/phase3_resnet50_seed20260803_20260816T204953/best_validation_map_checkpoint.h5` | Matterport validation and deployment (path listed in `data/logs/matterport/best_model_configuration.json`) |
+| SAM 3 domain-adapted checkpoint | `data/logs/sam3/domain_adapt/checkpoints/model_best.pt` | SAM 3 validation and deployment. Shared only under the SAM License (see [Licenses](#licenses)) |
+
+The JuniperMapper training dataset must be downloaded from [Zenodo](https://zenodo.org/records/10058715) (see [Licenses](#licenses)).
+
 ## First steps
 
 Download the current repository.
@@ -49,7 +66,7 @@ The process has been done using a machine with:
 | Component name | Model |
 | -------------- | ----- |
 | Processor | Intel(R) Core(TM) i7-14700KF (3.40 GHz) |
-| RAM instalada | 64 GB |
+| RAM | 64 GB |
 | Graphic card | NVIDIA GeForce RTX 5070 Ti (16 GB) |
 | OS | Windows 11 x64 |
 
@@ -312,6 +329,16 @@ The first step is create the conda environment with the following line:
 conda env create -f environment_sam3.yml
 ```
 
+Then point the environment's library path at its own `lib` folder, and reactivate it so the change takes effect:
+
+```bash
+conda activate sam3_shrubs
+conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib
+conda deactivate
+```
+
+> Note: The pip-installed PyTorch wheel otherwise loads Ubuntu's system `libstdc++`, which is older than the one conda-forge's matplotlib needs. Scripts that import `torch` before matplotlib then fail with `ImportError: ... version 'CXXABI_1.3.15' not found`. Whether a script hits this depends on import order, so set the variable even if everything works at first.
+
 Inside the new environment, authenticate with Hugging Face before the first run so the gated checkpoint can be downloaded:
 
 ```bash
@@ -411,6 +438,10 @@ The export files are saved inside the following path:
 
 The validation phase is used to determine the operational confidence threshold for model deployment. For each model, the threshold is selected from its F1-versus-confidence curve on the Field Work test split, which most closely represents real-world conditions. True positives are defined using S-IoU@50%. The selected operating point is the highest confidence threshold whose F1 score is within 1 percentage point of the maximum F1, thereby favouring more confident predictions and reducing false-positive masks while maintaining near-optimal performance.
 
+The F1 curves used for this selection are the `siou_threshold_50.csv` files in `results/evaluation/model_<model>/shrubs_test_fw/`.
+
+> Note: the `selected_confidence_threshold` stored in `data/logs/matterport/best_model_configuration.json` comes from the training sweep on the PI validation split and is not used for deployment.
+
 ### Matterport
 
 Run the following lines inside the console with the [required `mrcnn_tf2` environment](#matterport-mask-r-cnn):
@@ -467,7 +498,7 @@ Only masks with a probability higher than a selected confidence threshold is sel
 | Detectron2 Mask R-CNN | 0.45 |
 | SAM 3 | 0.60 |
 
-The orthomosaic is tiled into 448px windows with 64px overlap, trying to minimize cut masks due to tile boundaries.
+Each window produces one `<ortho_stem>_r<row>_c<col>_masks.json` file. It holds the polygon of every predicted instance (masks under 4 px are dropped) together with the window's georeferencing, so no GeoTIFF tile is needed. `Python/refine_detections.py` (inside the [`mrcnn_masks` environment](#first-steps)) merges them into one shrub map per model. Polygons from different windows that overlap, touch or lie within 0.05 m are unioned into one shrub, and the maximum, mean and median of their scores are kept.
 
 > Note: SAM 3 resizes every input to 1008px at inference. Using 448px windows at deployment reproduces that validation scale. Windows are read as raw 8-bit RGB with no contrast stretch, as for the other two models, so the radiometry matches the JuniperMapper training images. The orthomosaic must therefore be 8-bit; the alpha band (`--alpha-band`, default 4) marks empty pixels.
 
@@ -478,6 +509,9 @@ After the first deployment operation, each tile produces one `<ortho_stem>_r<row
 For Matterport configuration, it is mandatory to tile the original RGB mosaic first. Matterport's `mrcnn_tf2` conda env has a Windows DLL conflict between its old TensorFlow/Keras stack and GDAL, making rasterio fails to import there even after a clean reinstall.
 
 Use the following code inside `mrcnn_masks` environment to tile the original RGB image:
+
+> Note: empty `data/rasters/deployment_tiles/matterport` and `results/deployment/tile_masks/matterport` before rerunning. Files from an older run (another tile size or raster name) aren't overwritten: old tiles would be predicted again and old windows merged into the new map.
+
 
 ```bash
 python Python/tile_orthomosaic.py
@@ -504,6 +538,9 @@ python Python/refine_detections.py \
 
 Use the following code inside the `detectron2` virtual environment to segment a georeferenced mosaic and produce the shrub masks:
 
+> Note: empty `results/deployment/tile_masks/detectron2` before rerunning. Windows from an older run (another tile size or raster name) aren't overwritten and would be merged into the new map.
+
+
 ```bash
 python Python/detectron2_deploy.py
 ```
@@ -523,6 +560,8 @@ python Python/refine_detections.py \
 
 The next script create the predictions over the original image. The script also runs the same tiling loop as Detectron2, so no pretiling is required. `shrub` is used as the prompt text:
 
+> Note: empty `results/deployment/tile_masks/sam3/shrub` before rerunning. Windows from an older run (another tile size or raster name) aren't overwritten and would be merged into the new map.
+
 ```bash
 python Python/sam3_deploy.py
 ```
@@ -540,14 +579,14 @@ python Python/refine_detections.py \
 
 After the deployment phase, each model's shrub map is scored against the manually digitized masks inside the field work plots. Those are the regions of 9 $m^2$ where the field campaigns to digitize the masks were conducted. See `data/encinacorba_annotations.gpkg` `square_rois` and `field_work_masks` layers.
 
-The `field_work_masks` reference layer contains 79 polygons: 58 shrub masks (`shrub == 1`, mean 3.2 $m^2$) and 21 tree masks to assess false positives (`shrub == 0`, mean 15.2 $m^2$). It's exhaustive shrub digitization within each plot, i.e., every shrub inside them was digitized, allowing the computation of the precision-recall metrics. A prediction inside a plot with no matching ground-reference shrub genuinely is a false positive. It scores by direct polygon-to-polygon matching, clipped to the `square_rois` plot geometries with no buffer, i.e., only masks actually inside the plots are scored.
+The `field_work_masks` reference layer contains 79 polygons: 58 shrub masks (`shrub == 1`, mean 3.2 $m^2$) and 21 tree masks to assess false positives (`shrub == 0`, mean 15.2 $m^2$). It's exhaustive shrub digitization within each plot, i.e., every shrub inside them was digitized, allowing the computation of the precision-recall metrics. Most reference polygons are whole objects that extend beyond the plots, so no geometry is clipped. Each reference polygon is matched one-to-one against all predictions (IoU ≥ 0.1), and a matched prediction is a true positive wherever it lies. An unmatched prediction is a false positive only if at least half of its area lies inside the plots (`--min-plot-share`, default 0.5), where every shrub was digitized. Outside them, it may be a real shrub that was never digitized.
 
 > Note: The reference layer also contains `esp_code` and `esp_scientific_name` columns with the species code and scientific name per mask.
 
 The following metrics are computed:
 
 - Recall: fraction of ground-reference shrub polygons matched by a prediction.
-- Precision: fraction of in-plot predictions matched to a ground-reference shrub.
+- Precision: true positives divided by true and false positives.
 - Tree commission rate: fraction of ground-reference tree polygons matched by a prediction. It's a diagnostic breakdown of what a chunk of the false positives land on, not a separate test.
 
 To compute the metrics over the ground reference masks, run the following code inside `mrcnn_masks` environmnet:
@@ -556,11 +595,10 @@ To compute the metrics over the ground reference masks, run the following code i
 python Python/evaluate_deployment_accuracy.py
 ```
 
-The results are stored in
+It scores each model's `results/deployment/shrub_map_<model>.geojson` and writes to `results/evaluation/deployment_accuracy/`:
 
-```text
-results/evaluation/deployment_accuracy/summary.csv
-```
+- `summary.csv`: one row per model with the counts (TP, FP, FN, matched trees) and the metrics above.
+- `<model>_matches.csv`: whether each reference polygon was matched and its best IoU.
 
 ## LiDAR refinement
 
@@ -608,7 +646,7 @@ This repository combines material under different licenses. Each component keeps
 | Code in this repository (`Python/`, `R/`, `bin/shrubs_*`, notebooks) | [MIT](LICENSE) | |
 | `bin/mrcnn/` | [MIT, Matterport](bin/mrcnn/LICENSE) | Taken from [Ahmed Gad's Mask-RCNN-TF2](https://github.com/ahmedfgad/Mask-RCNN-TF2), a TensorFlow 2 port of [Matterport's Mask R-CNN](https://github.com/matterport/Mask_RCNN). Modified; see [`bin/mrcnn/README.md`](bin/mrcnn/README.md) for the list of changes. |
 | `bin/shrubs_sam3/configs/juniper_frozen_backbone.yaml` | [SAM License](bin/shrubs_sam3/configs/LICENSE) (Meta) | Adapted from the fine-tuning config of the SAM 3 repository, so it is a derivative of SAM Materials and stays under the SAM License, not the MIT license above. |
-| Field data (`data/encinacorba_annotations.gpkg`, `data/spectral_signatures/`) | CC BY 4.0 | Attribute this repository (see [`CITATION.cff`](CITATION.cff)). |
+| Field data (`data/encinacorba_annotations.gpkg`) | CC BY 4.0 | Attribute this repository (see [`CITATION.cff`](CITATION.cff)). |
 
 Third-party software and data that are **not** included in this repository must be obtained under their own licenses:
 
