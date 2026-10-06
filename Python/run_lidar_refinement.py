@@ -23,7 +23,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MODELS = ["detectron2", "matterport", "sam3"]
+# Add "matterport" if you want to compute it too
+MODELS = ["detectron2", "sam3"]
 
 
 def run(command: list) -> None:
@@ -55,7 +56,7 @@ def main() -> None:
         sys.exit("These input files were not found:\n  " + "\n  ".join(missing))
 
     try:
-        import geopandas, rasterio  # noqa: F401
+        import geopandas, rasterio
     except ImportError:
         sys.exit("geopandas/rasterio are missing. Activate the environment first:\n"
                  "  conda activate mrcnn_masks")
