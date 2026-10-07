@@ -1,36 +1,36 @@
-## Consistency and methodology issues a reviewer would notice
-
-- **Plot description conflicts:** the main README describes a "~261x278 m plot", while the results README describes `square_rois` as 9 m² regions.
-- **Other scripts' docstring examples use old filenames:** `model_detectron2.geojson` in `evaluate_deployment_accuracy.py`, `results/predicted_shrub_masks.geojson` in `lidar_refine_masks.py`.
-- **`matterport_convert_annotations.py`:**
-  - `images_dict` keeps accumulating across splits, so `Train/masks_points.json` also contains the Test entries. This only doesn't cause errors because image IDs are unique across splits.
-  - It truncates pixel coordinates with `int()`.
-  - It has an `except Exception: continue` that skips errors silently.
-  - It runs at import time.
-- **Hardcoded values in the training notebook:** Phase C hardcodes `0.0025` instead of the Phase B winner, and cell 25 uses a timestamped run folder.
-
-## Reproducibility and publication gaps
-- **Data isn't available.** The orthomosaic, CHM, point cloud and trained weights (`model_best.pth`, the Matterport `.h5`) are all gitignored, and nothing says where to get them. Deposit them on Zenodo and link from the README, or say clearly that they're available on request.
-- **`data/spectral_signatures/` is gitignored**, but the Licenses table says it's included under CC BY 4.0.
-- **The README has unfinished parts:** empty `## LiDAR refinement` and `## Funding` sections, a typo (`masks_mrcnn` where it means `mrcnn_masks`), `cd /d/shrubs-segmentation`, and "RAM instalada".
-- **Nothing is version-pinned** in `environment.yml` or `requirements.txt`. `tensorflow==2.0.0` with an unpinned numpy/opencv on Python 3.7 is likely to fail to resolve now. Export the working environments (`conda env export --from-history` plus versions).
-- **`CITATION.cff` has no `version`, `date-released` or DOI.** Mint a Zenodo DOI from a GitHub release.
-- **Notebooks** have out-of-order execution counts and leftover outputs (~95 KB of images). Clear them, or run them top to bottom before release.
-- Update the SAM 3 codes by avoiding the windows platform handlers. The only workflow allowed is the WSL2 one.
-
-## Minor
-- `bin/` holds importable packages that are reached through `sys.path.append` hacks. A `src/` layout would be cleaner, but this is acceptable for research code.
-- [shrubs_detectron/test.py](bin/shrubs_detectron/test.py) isn't a test, it's dataset validation. Rename it to something like `validation.py`.
-- In `evaluate_deployment_accuracy.py`, F1 is reported as `None` instead of `0` when precision is 0.
-
-## Readmes
-
-- Move the main LiDAR refinement text inside the main README to one README file inside R folder.
-- Remove the deployment README. Put its relevant information inside the paper.
-- Put the contents inside results\lidar_refined\README.md inside the main README or in the paper.
-
 ## Paper
 
-- Export the paper in md and try to fix the style and contents from introduction to results (do not go further the end of the Methodology section).
-- Check the final tested and fixed manuscript sections with the repository to ensure both match.
-- Go for the Results, making again the deployment and accuracy processeses.
+I compared the Methodology section of [main_nostyle.md](paper/main_nostyle.md#L27-L174) against the code, configs, run logs and result CSVs. Most of it matches. Three discrepancies matter, there are some smaller wording mismatches, and some steps in the code aren't described in the paper.
+
+## Discrepancies that matter
+
+**1. The committed deployment results predate the scoring rule the paper describes.** The paper ([L135](paper/main_nostyle.md#L135)) says an unmatched prediction counts as a false positive only if at least 50% of its area lies inside a plot. That rule (`--min-plot-share`) was only added in commit 6d1e520. Both [results/evaluation/deployment_accuracy/summary.csv](results/evaluation/deployment_accuracy/summary.csv) and [results/lidar_refined/summary.csv](results/lidar_refined/summary.csv) still have the old `n_predictions_in_plot` column. They were produced by the previous rule: any prediction touching a plot was scored, and every unmatched one was a false positive. The precision and F1 figures for the study area and for the LiDAR refinement need to be re-run before the Results can match the Methodology.
+
+## Smaller wording mismatches
+
+- **GNSS validation ([L153](paper/main_nostyle.md#L153)):** the paper says RMSE was computed for each target and the mean RMSE was used. The code ([validate_ground_cls.R:148-161](R/validate_ground_cls.R#L148-L161)) takes one residual per target (bilinear sample of a 5 cm TIN DTM) and computes a single RMSE across the 26 targets. PMF had the lowest (0.612 m). The sentence "DTMs for each classification method of each GNSS reference point were extracted" is also garbled.
+- **Alpha-band masking ([L131](paper/main_nostyle.md#L131)):** Detectron2 and SAM3 AND their masks with the alpha band. Matterport doesn't: its PNG tiles carry no alpha, so only completely empty windows are skipped ([matterport_deploy.py:182-186](Python/matterport_deploy.py#L182-L186)).
+- **"Polygons from the same window were not merged" ([L133](paper/main_nostyle.md#L133)):** two polygons from the same window are never linked directly. But grouping uses union-find, so they can still end up merged if both touch a polygon from another window.
+- **4-pixel minimum ([L131](paper/main_nostyle.md#L131)):** it's applied per contour polygon after mask-to-polygon conversion, not per instance ([polygons.py:36](bin/shrubs_common/polygons.py#L36)).
+- **IoU true positives ([L113](paper/main_nostyle.md#L113)):** the paper says the overlap "exceeded" the threshold; the code uses ≥.
+
+## In the code but not in the paper
+
+- **Detectron2:**
+  - WarmupCosineLR with 2,000 warm-up iterations (warm-up factor 0.1).
+  - Batch size 2, seed 42, validation every 2 epochs.
+  - Tiles upsampled from 448 to an 800‑px short edge for training and inference. The paper only explains SAM3's resizing.
+- **Matterport:**
+  - Exact stage schedules and learning rates: heads → 4+ → all, with the learning rate halved and then divided by 10.
+  - Batch size 4, SGD with momentum 0.9, weight decay 1e‑4.
+  - Augmentation: flips plus 90° rotations.
+  - Up to 100 detections per tile at deployment.
+- **SAM3:** annotations under 4 px² are removed from the train and val sets ([training.py:36](bin/shrubs_sam3/training.py#L36)).
+- **LiDAR:**
+  - The paper jumps from ground classification straight to "The resulting CHM" ([L155](paper/main_nostyle.md#L155)). DTM creation (TIN on the orthomosaic grid), height normalization (`knnidw`) and CHM rasterization (`p2r`, no fill) are never described.
+  - The three PTD parameter sets (30°/2 m, 30°/3 m, 40°/3 m) and the MCC/PMF parameters are not given.
+- **Paper text error:** [L161](paper/main_nostyle.md#L161) repeats the definition of the tall-cell fraction.
+
+One thing to check yourself: the S‑IoU code normalizes the prediction-directed score by the area of the union of reference masks, |P ∩ ∪G| / |∪G| ([metrics.py:155-172](bin/shrubs_common/metrics.py#L155-L172)). A prediction much larger than the shrub can therefore still score 1.0. If that matches Khaldi et al.'s Eq. 2, the paper should probably give the formula, since "S‑IoU" suggests a standard IoU.
+
+This is the S-IoU formula.
