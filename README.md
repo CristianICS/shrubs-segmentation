@@ -440,8 +440,6 @@ The validation phase is used to determine the operational confidence threshold f
 
 The F1 curves used for this selection are the `siou_threshold_50.csv` files in `results/evaluation/model_<model>/shrubs_test_fw/`.
 
-> Note: the `selected_confidence_threshold` stored in `data/logs/matterport/best_model_configuration.json` comes from the training sweep on the PI validation split and is not used for deployment.
-
 ### Matterport
 
 Run the following lines inside the console with the [required `mrcnn_tf2` environment](#matterport-mask-r-cnn):
