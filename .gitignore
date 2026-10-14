@@ -10,6 +10,8 @@ data/spectral_signatures
 data/rasters
 data/point_cloud
 data/encinacorba_fire.zip
+paper/figures
+paper/cuadernos_geograficos
 Python/**/__pycache__/
 # Internal sanity-check script, not part of the scientific workflow
 Python/detectron2_predict.py
