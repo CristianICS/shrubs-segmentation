@@ -48,13 +48,13 @@
 
 
 \title{
-    Mapping of Post-Fire Shrub Vegetation Using Deep Learning and UAV RGB-LiDAR Data
+    Transferability of Deep Learning Models for Post-Fire Shrub Mapping Using UAV RGB and LiDAR Data
 }
 
 \author{
     Cristian Iranzo,
     Raquel González,
-    Abdulhakim M. Abdi,
+    % Abdulhakim M. Abdi,
     Raquel Montorio,
     Fernando Pérez-Cabello
 }
@@ -69,11 +69,16 @@
 \linenumbers
 
 \begin{abstract}
+Accurate mapping of shrub vegetation is important for monitoring post-fire ecosystem recovery, but individual shrub delineation remains challenging because of heterogeneous canopy structure, limited reference data, and spectral similarity with other vegetation. This study evaluated the transferability of two deep-learning instance-segmentation approaches, Mask R-CNN and the promptable SAM 3 model, for mapping Mediterranean post-fire shrub vegetation from very-high-resolution UAV RGB imagery. Both models were adapted using the JuniperMapper dataset and evaluated on its photo-interpretation and field-work subsets before deployment in a fire-affected Mediterranean shrubland in Encinacorba, northeastern Spain. UAV LiDAR data were additionally used to derive a Canopy Height Model (CHM) and refine the RGB-based predictions by removing vegetation identified as trees.
+
+Within the JuniperMapper domain, both models achieved high segmentation accuracy, although domain-adapted SAM 3 consistently outperformed Mask R-CNN. At their selected operating points, SAM 3 reached an F1-score of \qty{78.3}{\percent} on the field-work dataset, compared with \qty{75.2}{\percent} for Mask R-CNN. However, both models transferred poorly to the independent post-fire study area, where recall decreased to \qty{3.4}{\percent} for SAM 3 and \qty{1.7}{\percent} for Mask R-CNN. The models preferentially detected taller vegetation and failed to identify most low-stature shrubs, indicating a substantial ecological and structural domain shift between the training and deployment environments. LiDAR-based refinement effectively reduced tree commission, from \qty{61.9}{\percent} to \qty{14.3}{\percent} for SAM 3 and from \qty{28.6}{\percent} to \qty{4.8}{\percent} for Mask R-CNN, without removing matched shrub predictions. Nevertheless, overall F1 improved only marginally because LiDAR filtering could remove false positives but could not recover shrubs missed by the RGB models.
+
+These results show that high performance within a source dataset does not guarantee successful transfer to structurally different shrub communities. Representative local training data appear to be more important than additional post-processing for mapping heterogeneous post-fire shrublands, while LiDAR provides useful complementary information for reducing tree-related commission errors.
 \end{abstract}
 
 \noindent
 \textbf{Keywords:}
-keyword 1; keyword 2; keyword 3; keyword 4; keyword 5
+shrub mapping; instance segmentation; transfer learning; UAV imagery; Mask R-CNN; Segment Anything Model; LiDAR
 
 \section{Introduction}
 
@@ -137,7 +142,7 @@ The deep-learning models were developed using the JuniperMapper dataset describe
 
 The PI dataset comprises 712 image tiles of 448 $\times$ 448 pixels, divided into predefined training (570), validation (67) and test (75) subsets. These datasets were employed during the two steps training of the models. First, the model weights were fine-tuned on the training subset. Neither model underwent a hyperparameter search; each used a fixed configuration taken from previous work. Second, a checkpoint selection phase was conducted on the validation subset using the highest mask AP$_{50}$.
 
-Mask AP was computed with the standard dataset-level COCO evaluation. Mask AP$_{50}$ uses an IoU threshold of 0.50, and mask AP$_{50:95}$, which averages AP over IoU thresholds from 0.50 to 0.95 in increments of 0.05, was used as a secondary criterion to resolve ties. 
+Mask AP was computed with the standard dataset-level COCO evaluation. Mask AP$_{50}$ uses an IoU threshold of 0.50, and mask AP$_{50:95}$, which averages AP over IoU thresholds from 0.50 to 0.95 in increments of 0.05, was used as a secondary criterion to resolve ties.
 
 Validation mask AP was used only to select checkpoints within each architecture, not to compare architectures. Architectures were compared using the post-training evaluation with the JuniperMapper test set and the field-work (FW) dataset. The FW dataset contains 1,771 field-derived shrub masks across 124 images. It was used to select the confidence threshold of each model (Section~\ref{sec:post_training_ev}) and to assess how the fixed models transferred from photo-interpreted reference data to field-derived shrub delineations.
 
@@ -199,6 +204,14 @@ Second, SAM 3 was adapted to the JuniperMapper domain. The vision and language b
 
 Data processing followed the original SAM 3 fine-tuning configuration. Training images were resized to a random square size of at most 1008 $\times$ 1008 pixels and padded to the model's 1008 $\times$ 1008 pixel input resolution. Validation images were resized directly to 1008 $\times$ 1008 pixels. The model was evaluated on the PI validation subset after each epoch.
 
+\subsubsection{SAM 3 prompt sensitivity analysis}
+
+The text prompt ``shrub'' was defined as the primary SAM 3 prompt before any evaluation. It was the category name used to domain-adapt the SAM 3 decoder and to select the checkpoint on the validation split, and it was used for the main comparison between architectures.
+
+A supplementary prompt-sensitivity analysis then evaluated nine alternative short noun phrases describing shrub vegetation: ``bush'', ``low shrub'', ``small shrub'', ``small bush'', ``woody shrub'', ``Mediterranean shrub'', ``dry shrub'', ``burned shrub'' and ``brown shrub''. To keep the analysis consistent with model development, each prompt was scored with the same data and metric used for checkpoint selection: the JuniperMapper Photo Interpretation validation split (67 images) and COCO mask AP$_{50}$, with the selected checkpoint and all other settings unchanged.
+
+Because the alternative prompts were evaluated on the same validation split used to select the SAM 3 checkpoint with the ``shrub'' prompt, the analysis was treated as exploratory rather than as a post-hoc prompt optimization.
+
 \subsubsection{Computational environment}
 
 Mask R-CNN and SAM 3 were trained and evaluated on a workstation equipped with an Intel Core i7 processor, \qty{64}{\giga\byte} RAM, and an NVIDIA GeForce RTX 5070 Ti GPU with \qty{16}{\giga\byte} VRAM, under Ubuntu running through WSL2 on Windows 11 with CUDA acceleration.
@@ -250,9 +263,18 @@ For each model, F1-score response curves across confidence thresholds were calcu
 
 \subsection{Independent study-area validation}
 
-Field validation was conducted in the Encinacorba study area using 26 plots of \qty{9}{\square\metre} distributed along two longitudinal transects. Within each plot, vegetation composition and percentage cover were recorded. Shrub and tree objects were subsequently delineated from the field-reference information and corresponding orthomosaic imagery, producing 58 shrub polygons and 21 tree polygons.
+Field validation was conducted in the Encinacorba study area using 26 plots of \qty{9}{\square\metre} distributed along two longitudinal transects. Within each plot, vegetation composition and percentage cover were recorded. Shrub and tree objects were subsequently delineated from the field-reference information and corresponding orthomosaic imagery, producing 58 shrub polygons and 21 tree polygons (Figure~\ref{label_examples}).
 
 The 58 shrubs contain 46 \textit{L. stoechas}, 8 \textit{C. laurifolius}, 4 \textit{Erica vagans} L.; and the 21 trees contain 13 \textit{Q. ilex}, 6 \textit{P. pinaster}, and 2 \textit{C. monogyna}.
+
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=1\textwidth]{figures/fig_map_plots_examples.png}
+    \caption{
+        Shrub labels across four validation plots. The species name and percentage of area covered are shown at the top of each image. The top-right image provides an example of the FW JuniperMapper masks.
+    }
+    \label{fig:label_examples}
+\end{figure}
 
 \subsection{Orthomosaic inference and mask reconstruction}
 
@@ -266,44 +288,41 @@ Predicted shrubs were matched to reference shrub polygons using greedy one-to-on
 
 Tree commission was calculated as the proportion of reference tree polygons matched by a prediction, using the same one-to-one matching (IoU $\geq$ 0.10) applied separately to the tree polygons. It describes where part of the false positives fell and is not a separate test.
 
-\subsection{SAM 3 prompt sensitivity analysis}
-
-The text prompt ``shrub'' was defined as the primary SAM 3 prompt before any evaluation. It was the category name used to domain-adapt the SAM 3 decoder and to select the checkpoint on the validation split, and it was used for the main comparison between architectures.
-
-A supplementary prompt-sensitivity analysis then evaluated nine alternative short noun phrases describing shrub vegetation: ``bush'', ``low shrub'', ``small shrub'', ``small bush'', ``woody shrub'', ``Mediterranean shrub'', ``dry shrub'', ``burned shrub'' and ``brown shrub''. To keep the analysis consistent with model development, each prompt was scored with the same data and metric used for checkpoint selection: the JuniperMapper Photo Interpretation validation split (67 images) and COCO mask AP$_{50}$, with the selected checkpoint and all other settings unchanged.
-
 \subsection{LiDAR processing}
 
 The UAV LiDAR point cloud was initially pre-processed using DJI Terra (v.5.3.5) software. Owing to data-storage constraints and to reduce the computational requirements of subsequent processing steps, a subset corresponding to approximately one-sixth of the original point cloud was retained for further analysis. The remaining processing was conducted in R Statistical Software (v4.6.1; \citealp{rsoftware}) using the lidR R package (v.4.3.2; \citealp{lidr2020}, \citealp{lidr2026}). All the scripts to conduct the following processing operations are inside the \textit{R} folder in the repository.
 
 First, Statistical Outlier Removal (SOR) operation was applied using 10 nearest neighbors and a three-standard-deviation rejection threshold. Then, a ground classification was performed. Three ground-classification algorithms were evaluated: Multiscale Curvature Classification (MCC), Progressive Morphological Filtering (PMF), and Progressive TIN Densification (PTD). Ground-classification performance was assessed qualitatively using elevation profiles along four representative transects and quantitatively against surveyed GNSS elevations. The last dataset was collected by a Leica GNSS receiver in the center of each plot with a centimetric accuracy.
 
-For quantitative assessment, LiDAR-derived digital terrain models (DTMs) for each classification method of each GNSS reference point were extracted. Each DTM was built with a TIN-interpolated method from each classified point cloud on the \qty{0.05}{\metre} orthomosaic grid. Each DTM was then sampled with bilinear interpolation at the GNSS targets. Elevation residuals were calculated relative to the surveyed orthometric elevation, and the mean RMSE across the GNSS targets was used to select the ground-classification method subsequently used for point-cloud normalization.
+For quantitative assessment, LiDAR-derived digital terrain models (DTMs) for each classification method of each GNSS reference point were extracted. Each DTM was built with a TIN-interpolated method from each classified point cloud on the \qty{0.05}{\metre} orthomosaic grid. Each DTM was then sampled with bilinear interpolation at the GNSS targets. Elevation residuals were calculated relative to the surveyed orthometric elevation, and the mean RMSE across the GNSS targets was used to select the ground-classification method subsequently used for point-cloud normalization. The 26 validation areas were covered by all DTMs, so every method was evaluated on the same set of targets.
 
-The CHM was produced in two steps from the most accurate ground-classified point cloud. First, the point cloud was height-normalized by subtracting from each point the ground elevation interpolated at its location from the classified ground returns with k-nearest-neighbor inverse distance weighting (10 neighbors, power of 2, maximum search radius of \qty{50}{\metre}). Second, the normalized point cloud was rasterized into a Canopy Height Model (CHM) by assigning to each cell the highest normalized return within it. The CHM grid had a spatial resolution of \qty{0.25}{\metre} and was obtained by aggregating the orthomosaic grid by an integer factor, so the two remained aligned. This resolution was chosen because at \qty{5}{\centi\metre} only \qty{5.5}{\percent} of the cells contained a direct LiDAR return, compared with \qty{69}{\percent} at \qty{0.25}{\metre}. Cells without returns were retained as NoData rather than interpolated.
+The Canopy Height Model (CHM) was produced in two steps from the most accurate ground-classified point cloud. First, the point cloud was height-normalized by subtracting from each point the ground elevation interpolated at its location from the classified ground returns with k-nearest-neighbor inverse distance weighting (10 neighbors, power of 2, maximum search radius of \qty{50}{\metre}). Second, the normalized point cloud was rasterized into a CHM by assigning to each cell the highest normalized return within it. The CHM grid had a spatial resolution of \qty{0.25}{\metre} and was obtained by aggregating the orthomosaic grid by an integer factor, so the two remained aligned. This resolution was chosen because at \qty{5}{\centi\metre} only \qty{5.5}{\percent} of the cells contained a direct LiDAR return, compared with \qty{69}{\percent} at \qty{0.25}{\metre}. Cells without returns were retained as NoData rather than interpolated.
 
 \subsection{LiDAR-based refinement}
 
-The CHM was used as a post-processing to refine the shrub maps. It was not supplied as an input to any deep-learning model, so the same refinement could be applied independently to the predictions of both architectures. Because CHM heights close to the ground were within the LiDAR noise, the CHM was used only to separate trees from shrubs; predictions dominated by bare ground were not filtered and were left to the model confidence threshold.
+The CHM was used as a post-processing step to refine the shrub maps. It was not provided as input to either deep-learning model; therefore, the same refinement procedure could be applied independently to the predictions generated by both architectures. Because CHM heights close to ground level were within the range of LiDAR noise, the CHM was used only to distinguish trees from shrubs. Predictions dominated by bare ground were not filtered and were instead left to the model confidence threshold.
 
-The refinement process was carried out following the next steps. First, the CHM cells whose centers fell inside a predicted polygon were extracted. From them, the number of valid cells, the coverage (proportion of cells with a valid height), the mean, maximum and 90th-percentile height (P90), and the tall-cell fraction ($f$) were calculated. The tall-cell fraction was the proportion of valid cells exceeding a height threshold $h$.
+The refinement procedure consisted of the following steps. First, CHM cells whose centers fell within each predicted polygon were extracted. The number of valid cells, coverage (i.e., the proportion of cells with a valid height), mean height, maximum height, 90th-percentile height (P90), and tall-cell fraction ($f$) were then calculated. The tall-cell fraction was defined as the proportion of valid cells exceeding a height threshold $h$.
 
-Each prediction was then assigned to one of four post-processing categories, evaluated in the following order:
+Each prediction was subsequently assigned to one of four post-processing categories, evaluated in the following order:
 
 \begin{itemize}
-\item Insufficient support. Predictions with a coverage below 0.3 or fewer than five valid cells were retained without modification. Predictions smaller than one CHM cell or outside the CHM extent have no valid cells and fall into this category.
-\item Rejected. Predictions with P90 $> h$ and a tall-cell fraction $\geq f$ were removed as trees.  
-\item Clipped. Predictions with at least one cell above $h$ that did not meet the rejection rule had their tall cells removed, and the largest remaining connected part was retained. If that part was smaller than \qty{0.25}{\square\metre}, the prediction was rejected.  
-\item Unchanged. All other predictions were retained as they were.  
+\item \textbf{Insufficient support.} Predictions with coverage below 0.3 or fewer than five valid cells were retained without modification. Predictions smaller than one CHM cell or located outside the CHM extent had no valid cells and therefore fell into this category.
+
+\item \textbf{Rejected.} Predictions with P90 $> h$ and a tall-cell fraction $\geq f$ were removed as trees.
+
+\item \textbf{Clipped.} Predictions containing at least one cell above $h$ but not meeting the rejection criterion had their tall cells removed, after which the largest remaining connected component was retained. If this component was smaller than \qty{0.25}{\square\metre}, the prediction was rejected.
+
+\item \textbf{Unchanged.} All remaining predictions were retained without modification.
 \end{itemize}
 
-The thresholds $h$ and $f$ were calibrated on the 79 study area vegetation masks, corresponding with 58 shrubs and 21 trees. The growth form (tree or shrub) of each mask was assigned from the species identified in the field. Each mask representing \textit{Q. ilex}, \textit{P. pinaster} and \textit{C. monogyna} was defined as tree. The rest were shrubs.
+The thresholds $h$ and $f$ were calibrated using the 79 vegetation masks from the study area, comprising 58 shrubs and 21 trees. The growth form (tree or shrub) of each mask was assigned according to the species identified in the field. Masks representing \textit{Q. ilex}, \textit{P. pinaster}, and \textit{C. monogyna} were classified as trees, whereas the remaining masks were classified as shrubs.
 
-All combinations of $h \in \{1.3, 1.5, 1.7, 1.9\}$~\unit{\metre} and $f \in \{0, 0.1, 0.2, 0.3, 0.5\}$ were applied to the masks with the procedure above. The selection rule was defined before calibration. Among the combinations that neither rejected nor clipped any shrub mask, the one that rejected most tree masks was chosen, with ties resolved in favor of the higher $h$ and then the higher $f$.
+All combinations of $h \in \{1.3, 1.5, 1.7, 1.9\}$~\unit{\metre} and $f \in \{0, 0.1, 0.2, 0.3, 0.5\}$ were evaluated using the procedure described above. The selection rule was defined prior to calibration. Among the parameter combinations that neither rejected nor clipped any shrub mask, the combination that rejected the largest number of tree masks was selected. Ties were resolved in favor of the higher value of $h$, followed by the higher value of $f$.
 
-Because the thresholds were selected on the same masks, the selection was repeated in a leave-one-ROI-out procedure. Each mask was assigned to the \qty{9}{\square\metre} field ROI it overlapped most, or to the nearest ROI if it overlapped none (three masks, at most \qty{0.85}{\metre} away). For each of the 26 ROIs, the thresholds were selected on the masks of the remaining ROIs and applied to the held-out masks.
+Because the thresholds were selected using the same masks on which their performance was assessed, the selection procedure was repeated using a leave-one-ROI-out approach. Each mask was assigned to the \qty{9}{\square\metre} field ROI with which it had the greatest spatial overlap, or to the nearest ROI when no overlap occurred (three masks, with a maximum distance of \qty{0.85}{\metre}). For each of the 26 ROIs, the thresholds were selected using masks from the remaining ROIs and then applied to the masks belonging to the held-out ROI.
 
-The selected parameters were then applied unchanged to the predictions of both architectures. Performance before and after LiDAR refinement was compared using the same independent study-area validation procedure.
+The selected parameters were subsequently applied without modification to the predictions generated by both architectures. Performance before and after LiDAR-based refinement was compared using the same independent study-area validation procedure.
 
 \section{Results}
 
@@ -366,9 +385,7 @@ Although the training schedule was configured for 30 epochs, optimization became
 
 On the Photo Interpretation validation split, the text prompt changed SAM 3's accuracy only slightly unless it added a color or condition modifier (Table~\ref{tab:prompt_sensitivity}). The predefined prompt ``shrub'' reached a mask AP$_{50}$ of \qty{89.0}{\percent} and a mask AP$_{50:95}$ of \qty{64.8}{\percent}, the same values recorded when the checkpoint was selected. Six of the alternative prompts (``low shrub'', ``bush'', ``Mediterranean shrub'', ``small bush'', ``woody shrub'' and ``small shrub'') scored within 0.6 percentage points of mask AP$_{50}$ of ``shrub'' (\qtyrange{88.5}{88.9}{\percent}). Their mask AP$_{50:95}$ was equally close (\qtyrange{64.3}{65.1}{\percent}). No single prompt ranked first on both metrics: ``shrub'' had the highest mask AP$_{50}$ and ``woody shrub'' the highest mask AP$_{50:95}$, and both leads are smaller than 0.4 percentage points. On a 67-image validation set, such differences do not support preferring any synonym over the predefined prompt.
 
-Prompts that added a color or condition modifier performed consistently worse. Compared with ``shrub'', mask AP$_{50}$ fell by 1.8 percentage points for ``dry shrub'', by 2.7 for ``burned shrub'' and by 10.2 for ``brown shrub''. ``Brown shrub'' also had the lowest mask AP$_{50:95}$ (\qty{56.1}{\percent}, against \qty{64.8}{\percent} for ``shrub'').
-
-Because the alternative prompts were evaluated on the same validation split used to select the SAM 3 checkpoint with the ``shrub'' prompt, the analysis was treated as exploratory rather than as a post-hoc prompt optimization. The predefined prompt ``shrub'' was therefore retained for the principal inter-model comparison.
+Prompts that added a color or condition modifier performed consistently worse. Compared with ``shrub'', mask AP$_{50}$ fell by 1.8 percentage points for ``dry shrub'', by 2.7 for ``burned shrub'' and by 10.2 for ``brown shrub''. ``Brown shrub'' also had the lowest mask AP$_{50:95}$ (\qty{56.1}{\percent}, against \qty{64.8}{\percent} for ``shrub''). The predefined prompt ``shrub'' was therefore retained for the principal inter-model comparison.
 
 \begin{table}[ht]
     \centering
@@ -394,31 +411,33 @@ Because the alternative prompts were evaluated on the same validation split used
     \end{tabular}
 \end{table}
 
-\subsection{Held-out JuniperMapper evaluation}
+\subsection{Evaluation on held-out JuniperMapper data}
 
 After model selection, the fixed Mask R-CNN and domain-adapted SAM 3 models were evaluated on the FW and PI test datasets. The FW results are presented first because the deployment operating points were selected on them.
 
 \subsubsection{Field-work dataset performance}
 
-On the FW dataset, the two architectures responded very differently to the prediction-confidence threshold (Figure~\ref{fig:internal_performance_fw}). At IoU~=~0.50 and S-IoU~=~0.50, Mask R-CNN rose steeply from F1 = \qty{15}{\percent} (IoU) and \qty{17}{\percent} (S-IoU) at a confidence of \qty{0}{\percent}, where all 31,744 candidate predictions were retained, to a broad plateau. F1 peaked at \qty{35}{\percent} confidence (IoU \qty{70.4}{\percent}; S-IoU \qty{75.8}{\percent}), S-IoU-based F1 remained within 1 percentage point of this maximum between \qty{20}{\percent} and \qty{45}{\percent}, and F1 declined gradually above \qty{60}{\percent} and more steeply above \qty{85}{\percent}, reaching approximately \qty{46}{\percent} at \qty{95}{\percent}. The domain-adapted SAM 3 model instead showed a unimodal, sharply peaked response. F1 increased from \qty{22}{\percent} at \qty{0}{\percent} confidence, where the large number of low-scoring predictions depressed precision, to a maximum at \qtyrange{55}{60}{\percent} (IoU \qty{74.9}{\percent}; S-IoU \qty{78.3}{\percent}), and then fell to \qty{60}{\percent} at \qty{80}{\percent} and \qty{5}{\percent} at \qty{95}{\percent}, because few predictions received scores above \qty{85}{\percent}. Mask R-CNN was consequently robust to a poorly chosen threshold, whereas SAM 3 was fragile. On the S-IoU~=~0.50 curve, a shift of 20 points above the optimum reduced F1 by only 2 points for Mask R-CNN (from \qty{75.8}{\percent} at \qty{35}{\percent} to \qty{73.8}{\percent} at \qty{55}{\percent}) but by about 18 points for SAM 3 (from \qty{78.3}{\percent} at \qty{60}{\percent} to \qty{60.5}{\percent} at \qty{80}{\percent}).
+On the FW dataset, the two architectures responded very differently to the prediction-confidence threshold (Figure~\ref{fig:internal_performance_fw}). At IoU~=~0.50 and S-IoU~=~0.50, Mask R-CNN performance increased steeply from F1 values of \qty{15}{\percent} (IoU) and \qty{17}{\percent} (S-IoU) at \qty{0}{\percent} confidence, where all 31,744 candidate predictions were retained, to a broad plateau. F1 peaked at \qty{35}{\percent} confidence (IoU: \qty{70.4}{\percent}; S-IoU: \qty{75.8}{\percent}). S-IoU-based F1 remained within 1 percentage point of this maximum between \qty{20}{\percent} and \qty{45}{\percent}. Above \qty{60}{\percent} confidence, F1 declined gradually, with a steeper decrease above \qty{85}{\percent}, reaching approximately \qty{46}{\percent} at \qty{95}{\percent}.
+
+In contrast, SAM 3 showed a unimodal, sharply peaked response. F1 increased from \qty{22}{\percent} at \qty{0}{\percent} confidence, where the large number of low-scoring predictions reduced precision, to a maximum at \qtyrange{55}{60}{\percent} confidence (IoU: \qty{74.9}{\percent}; S-IoU: \qty{78.3}{\percent}). It then decreased to approximately \qty{60}{\percent} at \qty{80}{\percent} confidence and \qty{5}{\percent} at \qty{95}{\percent}, because few predictions received scores above \qty{85}{\percent}. Mask R-CNN was therefore substantially less sensitive to threshold selection than SAM 3. On the S-IoU~=~0.50 curve, increasing the threshold by 20 percentage points above the optimum reduced F1 by only 2 points for Mask R-CNN (from \qty{75.8}{\percent} at \qty{35}{\percent} to \qty{73.8}{\percent} at \qty{55}{\percent}), but by approximately 18 points for SAM 3 (from \qty{78.3}{\percent} at \qty{60}{\percent} to \qty{60.5}{\percent} at \qty{80}{\percent}).
 
 \begin{figure}[ht]
     \centering
     \includegraphics[width=1\textwidth]{figures/fig_models_internal_performance_fw.png}
     \caption{
-        Mask R-CNN and SAM 3 performance evaluated on FW set using IoU and S-IoU metrics across different prediction-confidence score thresholds ($X$ axis).
+        Performance of Mask R-CNN and SAM 3 on the FW dataset using IoU and S-IoU across prediction-confidence thresholds ($X$ axis).
     }
     \label{fig:internal_performance_fw}
 \end{figure}
 
-Raising the matching threshold to IoU~=~0.75 and S-IoU~=~0.75 lowered F1 for both models but largely preserved the shape of each response. SAM 3 again achieved higher values (S-IoU \qty{68.4}{\percent} at \qty{60}{\percent} confidence; IoU \qty{53.6}{\percent} at \qty{65}{\percent}) than Mask R-CNN (S-IoU \qty{64.2}{\percent} at \qty{35}{\percent}; IoU \qty{45.3}{\percent} at \qty{80}{\percent}). For Mask R-CNN, IoU-based F1 increased slightly with confidence, which indicates that higher-scoring predictions delineated crown boundaries more accurately. S-IoU-based F1 exceeded IoU-based F1 at every confidence threshold for both models, by approximately 3-6 percentage points at a matching threshold of 0.50 and 15-20 points at 0.75.
+Increasing the matching threshold to IoU~=~0.75 and S-IoU~=~0.75 reduced F1 for both models but largely preserved the shape of their responses. SAM 3 again achieved higher maximum values (S-IoU: \qty{68.4}{\percent} at \qty{60}{\percent} confidence; IoU: \qty{53.6}{\percent} at \qty{65}{\percent}) than Mask R-CNN (S-IoU: \qty{64.2}{\percent} at \qty{35}{\percent}; IoU: \qty{45.3}{\percent} at \qty{80}{\percent}). For Mask R-CNN, IoU-based F1 increased slightly with confidence, consistent with better spatial agreement among higher-scoring predictions. S-IoU-based F1 exceeded IoU-based F1 at every confidence threshold for both models, by approximately 3--6 percentage points at a matching threshold of 0.50 and 15--20 points at 0.75.
 
-The selection criterion, i.e., the highest confidence threshold whose F1 at S-IoU~=~0.50 was within 1 percentage point of the maximum, gave operating points of \qty{60}{\percent} for SAM 3 and \qty{45}{\percent} for Mask R-CNN (Table~\ref{tab:fw_operating_points}).
+The selection criterion, defined as the highest confidence threshold for which F1 at S-IoU~=~0.50 remained within 1 percentage point of the maximum, resulted in operating points of \qty{60}{\percent} for SAM 3 and \qty{45}{\percent} for Mask R-CNN (Table~\ref{tab:fw_operating_points}).
 
 \begin{table}[ht]
     \centering
     \caption{
-        Precision, recall and F1 of each model at its selected operating point on the FW dataset (1,771 reference shrubs), matched with S-IoU~=~0.50.
+        Precision, recall, and F1 of each model at its selected operating point on the FW dataset (1,771 reference shrubs), using S-IoU~=~0.50 for matching.
     }
     \label{tab:fw_operating_points}
     \begin{tabular}{lcccc}
@@ -431,31 +450,33 @@ The selection criterion, i.e., the highest confidence threshold whose F1 at S-Io
     \end{tabular}
 \end{table}
 
-For SAM 3, the selected threshold coincided with the maximum, because F1 fell to \qty{77.1}{\percent} at \qty{65}{\percent}. For Mask R-CNN, the criterion moved the operating point along the plateau from the \qty{35}{\percent} maximum (\qty{75.8}{\percent}) to \qty{45}{\percent}. This raised precision from \qty{79.6}{\percent} to \qty{82.9}{\percent}, lowered recall from \qty{72.4}{\percent} to \qty{68.8}{\percent} and reduced the number of predictions from 1,553 to 1,413.
+For SAM 3, the selected threshold coincided with the maximum because F1 decreased to \qty{77.1}{\percent} at \qty{65}{\percent} confidence. For Mask R-CNN, the criterion shifted the operating point along the plateau from the \qty{35}{\percent} maximum (\qty{75.8}{\percent}) to \qty{45}{\percent}. This increased precision from \qty{79.6}{\percent} to \qty{82.9}{\percent}, reduced recall from \qty{72.4}{\percent} to \qty{68.8}{\percent}, and decreased the number of predictions from 1,553 to 1,413.
 
-At these operating points SAM 3 outperformed Mask R-CNN, and the ranking was consistent across all four evaluation criteria. Mask R-CNN was slightly more precise, so the advantage of SAM 3 resulted primarily from its higher recall.
+At these operating points, SAM 3 outperformed Mask R-CNN, and the ranking was consistent across all four evaluation criteria. Mask R-CNN was slightly more precise; therefore, the advantage of SAM 3 resulted primarily from its higher recall.
 
 \subsubsection{PI test performance}
 
-On the PI test dataset, F1 was consistently higher than on the FW dataset, and both models reached their maxima at higher confidence thresholds (Figure~\ref{fig:internal_performance_pi}). At IoU~=~0.50 and S-IoU~=~0.50, Mask R-CNN rose steeply from F1 = \qty{14}{\percent} (IoU) and \qty{15}{\percent} (S-IoU) at \qty{0}{\percent} confidence, where all 19,200 candidate predictions were retained, to \qty{65}{\percent} and \qty{67}{\percent} at \qty{5}{\percent}. F1 then increased steadily to a maximum at \qty{80}{\percent} (IoU \qty{84.8}{\percent}; S-IoU \qty{88.6}{\percent}), stayed within 1 percentage point of this maximum between \qty{65}{\percent} and \qty{85}{\percent}, and declined above \qty{90}{\percent}, reaching \qtyrange{76}{79}{\percent} at \qty{95}{\percent}. SAM 3 again showed a unimodal response, rising from \qty{18}{\percent} at \qty{0}{\percent} confidence to a maximum at \qtyrange{65}{70}{\percent} (IoU \qty{88.5}{\percent}; S-IoU \qty{91.1}{\percent}) and then declining sharply to \qty{86.0}{\percent} at \qty{80}{\percent}, \qty{55.8}{\percent} at \qty{90}{\percent} and \qty{14.1}{\percent} at \qty{95}{\percent}. As on the FW dataset, SAM 3 was the more sensitive to the choice of operating point. Departures of 10 and 20 percentage points from the optimum reduced its F1 by up to 5.1 and 35.3 points, respectively, compared with up to 2.3 and 1.2 points for Mask R-CNN.
+On the PI test dataset, F1 was consistently higher than on the FW dataset, and both models reached their maxima at higher confidence thresholds (Figure~\ref{fig:internal_performance_pi}). At IoU~=~0.50 and S-IoU~=~0.50, Mask R-CNN performance increased steeply from F1 values of \qty{14}{\percent} (IoU) and \qty{15}{\percent} (S-IoU) at \qty{0}{\percent} confidence, where all 19,200 candidate predictions were retained, to \qty{65}{\percent} and \qty{67}{\percent}, respectively, at \qty{5}{\percent}. F1 then increased steadily to a maximum at \qty{80}{\percent} confidence (IoU: \qty{84.8}{\percent}; S-IoU: \qty{88.6}{\percent}). It remained within 1 percentage point of this maximum between \qty{65}{\percent} and \qty{85}{\percent} confidence. Above \qty{90}{\percent} confidence, performance declined, with F1 reaching \qtyrange{76}{79}{\percent} at a confidence threshold of \qty{95}{\percent}.
+
+SAM 3 again showed a unimodal response. F1 increased from \qty{18}{\percent} at \qty{0}{\percent} confidence to a maximum at \qtyrange{65}{70}{\percent} (IoU: \qty{88.5}{\percent}; S-IoU: \qty{91.1}{\percent}), and then declined sharply to \qty{86.0}{\percent} at \qty{80}{\percent}, \qty{55.8}{\percent} at \qty{90}{\percent}, and \qty{14.1}{\percent} at \qty{95}{\percent}. As on the FW dataset, SAM 3 was more sensitive to the choice of operating point. Departures of 10 and 20 percentage points from the optimum reduced its F1 by up to 5.1 and 35.3 points, respectively, compared with reductions of up to 2.3 and 1.2 points for Mask R-CNN.
 
 \begin{figure}[ht]
     \centering
     \includegraphics[width=1\textwidth]{figures/fig_models_internal_performance_pi.png}
     \caption{
-        Mask R-CNN and SAM 3 performance evaluated on PI test set using IoU and S-IoU metrics across different prediction-confidence score thresholds ($X$ axis).
+        Performance of Mask R-CNN and SAM 3 on the PI test dataset using IoU and S-IoU across prediction-confidence thresholds ($X$ axis).
     }
     \label{fig:internal_performance_pi}
 \end{figure}
 
-At IoU~=~0.75 and S-IoU~=~0.75, F1 decreased much less than on the FW dataset and the shape of each response was preserved. SAM 3 again achieved higher values (S-IoU \qty{87.6}{\percent} at \qty{70}{\percent} confidence; IoU \qty{80.5}{\percent} at \qty{75}{\percent}) than Mask R-CNN (S-IoU \qty{85.0}{\percent} at \qty{80}{\percent}; IoU \qty{72.3}{\percent} at \qty{85}{\percent}). For both models, the best F1 at IoU~=~0.75 occurred at a confidence equal to or higher than the best at IoU~=~0.50, consistent with the more accurate crown delineation of higher-scoring predictions observed on the FW dataset. S-IoU-based F1 again exceeded IoU-based F1 at every confidence threshold, but by less than on the FW dataset, with differences at the respective maxima of 2.6-3.8 percentage points at a matching threshold of 0.50 and 7.1-12.7 points at 0.75.
+At IoU~=~0.75 and S-IoU~=~0.75, F1 decreased much less than on the FW dataset, while the overall shape of each response was preserved. SAM 3 again achieved higher maximum values (S-IoU: \qty{87.6}{\percent} at \qty{70}{\percent} confidence; IoU: \qty{80.5}{\percent} at \qty{75}{\percent}) than Mask R-CNN (S-IoU: \qty{85.0}{\percent} at \qty{80}{\percent}; IoU: \qty{72.3}{\percent} at \qty{85}{\percent}). For both models, the maximum F1 at IoU~=~0.75 occurred at a confidence threshold equal to or higher than that of the maximum at IoU~=~0.50, consistent with greater spatial agreement among higher-scoring predictions. S-IoU-based F1 again exceeded IoU-based F1 at every confidence threshold, although the differences were smaller than on the FW dataset. At the respective maxima, these differences were 2.6--3.8 percentage points at a matching threshold of 0.50 and 7.1--12.7 points at 0.75.
 
-The same selection criterion gave operating points of \qty{70}{\percent} for SAM 3, which coincided with its maximum, and \qty{85}{\percent} for Mask R-CNN, one step above its \qty{80}{\percent} maximum (\qty{88.6}{\percent}) (Table~\ref{tab:pi_operating_points}). As on the FW dataset, SAM 3 ranked above Mask R-CNN across all four evaluation criteria, while Mask R-CNN retained the higher precision.
+The same selection criterion resulted in operating points of \qty{70}{\percent} for SAM 3, which coincided with its maximum, and \qty{85}{\percent} for Mask R-CNN, one step above its \qty{80}{\percent} maximum (\qty{88.6}{\percent}) (Table~\ref{tab:pi_operating_points}). As on the FW dataset, SAM 3 ranked above Mask R-CNN across all four evaluation criteria, whereas Mask R-CNN retained higher precision.
 
 \begin{table}[ht]
     \centering
     \caption{
-        Precision, recall and F1 of each model at the operating point selected on the PI test dataset (690 reference shrubs), matched with S-IoU~=~0.50.
+        Precision, recall, and F1 of each model at the operating point selected on the PI test dataset (690 reference shrubs), using S-IoU~=~0.50 for matching.
     }
     \label{tab:pi_operating_points}
     \begin{tabular}{lcccc}
@@ -468,11 +489,11 @@ The same selection criterion gave operating points of \qty{70}{\percent} for SAM
     \end{tabular}
 \end{table}
 
-The thresholds selected on the PI dataset were 10 (SAM 3) and 40 (Mask R-CNN) percentage points higher than those selected on the FW dataset. Both models therefore assigned lower confidence scores to shrubs in the field-based reference data. When the FW thresholds were applied to the PI dataset, F1 at S-IoU~=~0.50 fell by 2.2 points for SAM 3 (\qty{88.9}{\percent}) and 2.8 points for Mask R-CNN (\qty{85.4}{\percent}), mainly through lower precision, while recall remained at \qtyrange{90}{96}{\percent}. When the PI thresholds were applied to the FW dataset, F1 fell by 3.8 points for SAM 3 (\qty{74.5}{\percent}) and 13.1 points for Mask R-CNN (\qty{62.1}{\percent}), mainly through lower recall. Operating points derived from the field-based data therefore transferred to the photo-interpretation domain with a much smaller loss of accuracy than the reverse. This supports the use of the FW-derived thresholds (\qty{60}{\percent} for SAM 3 and \qty{45}{\percent} for Mask R-CNN) for deployment.
+The thresholds selected on the PI dataset were 10 percentage points higher for SAM 3 and 40 percentage points higher for Mask R-CNN than those selected on the FW dataset. Both models therefore assigned lower confidence scores to shrubs in the field-based reference data. When the FW-derived thresholds were applied to the PI dataset, F1 at S-IoU~=~0.50 decreased by 2.2 points for SAM 3 (to \qty{88.9}{\percent}) and 2.8 points for Mask R-CNN (to \qty{85.4}{\percent}), mainly because of lower precision, while recall remained between \qty{90}{\percent} and \qty{96}{\percent}. In contrast, when the PI-derived thresholds were applied to the FW dataset, F1 decreased by 3.8 points for SAM 3 (to \qty{74.5}{\percent}) and 13.1 points for Mask R-CNN (to \qty{62.1}{\percent}), mainly because of lower recall. Operating points derived from the field-based data therefore transferred to the photo-interpretation domain with substantially less loss in performance than in the reverse direction. This result supports the use of the FW-derived thresholds (\qty{60}{\percent} for SAM 3 and \qty{45}{\percent} for Mask R-CNN) for deployment.
 
 \subsection{LiDAR ground classification}
 
-Of the 37 targets, 26 were covered by all DTMs and were used for the comparison, so every method was evaluated on the same set of targets. PMF had the lowest vertical RMSE (\qty{0.612}{\metre}), followed by PTD with the \qty{30}{\degree}/\qty{2}{\metre} (\qty{0.641}{\metre}) and \qty{30}{\degree}/\qty{3}{\metre} (\qty{0.645}{\metre}) parameterizations, MCC (\qty{0.727}{\metre}) and PTD with \qty{40}{\degree}/\qty{3}{\metre} (\qty{0.787}{\metre}) (Table~\ref{tab:ground_classification}). All DTMs overestimated the GNSS heights, with mean errors between \qty{0.356}{\metre} (PMF) and \qty{0.517}{\metre} (PTD \qty{40}{\degree}/\qty{3}{\metre}). PMF also had the lowest share of targets with an absolute error above \qty{0.5}{\metre} (\qty{15.4}{\percent}), compared with \qty{23.1}{\percent} for both PTD \qty{30}{\degree} variants, \qty{30.8}{\percent} for PTD \qty{40}{\degree}/\qty{3}{\metre} and \qty{34.6}{\percent} for MCC. PMF was therefore retained for point-cloud normalization and CHM generation.
+PMF had the lowest vertical RMSE (\qty{0.612}{\metre}), followed by PTD with the \qty{30}{\degree}/\qty{2}{\metre} (\qty{0.641}{\metre}) and \qty{30}{\degree}/\qty{3}{\metre} (\qty{0.645}{\metre}) parameterizations, MCC (\qty{0.727}{\metre}) and PTD with \qty{40}{\degree}/\qty{3}{\metre} (\qty{0.787}{\metre}) (Table~\ref{tab:ground_classification}). All DTMs overestimated the GNSS heights, with mean errors between \qty{0.356}{\metre} (PMF) and \qty{0.517}{\metre} (PTD \qty{40}{\degree}/\qty{3}{\metre}). PMF also had the lowest share of targets with an absolute error above \qty{0.5}{\metre} (\qty{15.4}{\percent}), compared with \qty{23.1}{\percent} for both PTD \qty{30}{\degree} variants, \qty{30.8}{\percent} for PTD \qty{40}{\degree}/\qty{3}{\metre} and \qty{34.6}{\percent} for MCC. PMF was therefore retained for point-cloud normalization and CHM generation.
 
 \begin{table}[ht]
     \centering
@@ -508,11 +529,13 @@ The terrain profiles in Figure~\ref{fig:transect_profiles} show the classificati
 
 \subsection{Calibration of the LiDAR refinement rule}
 
-CHM measurements were available for all 79 field-reference masks. The median number of valid CHM cells per mask was 15 for shrubs and 96 for trees. With the minimum-support criteria, 10 shrub masks, all of them small \textit{L. stoechas}, had insufficient LiDAR support and would be retained without modification. No tree mask fell into this category.
+CHM measurements were available for all 79 field-reference masks. The median number of valid CHM cells per mask was 15 for shrubs and 96 for trees. Under the minimum-support criteria, 10 shrub masks, all corresponding to small \textit{L. stoechas} individuals, had insufficient LiDAR support and would therefore be retained without modification. No tree mask fell into this category.
 
-Mean CHM height differed clearly between growth forms (Figure~\ref{fig:species_mean_height}). \textit{Q. ilex} (\qty{2.87}{\metre}) and \textit{P. pinaster} (\qty{2.45}{\metre}) were the tallest species. They were followed by \textit{C. monogyna} (\qty{1.00}{\metre}), whose mean height was closer to that of the tallest shrub, \textit{C. laurifolius} (\qty{0.67}{\metre}), than to the other tree species. \textit{E. vagans} (\qty{0.21}{\metre}) and \textit{L. stoechas} (\qty{0.13}{\metre}) were the lowest.
+Mean CHM height differed clearly between growth forms (Figure~\ref{fig:species_mean_height}). \textit{Q. ilex} (\qty{2.87}{\metre}) and \textit{P. pinaster} (\qty{2.45}{\metre}) were the tallest species, followed by \textit{C. monogyna} (\qty{1.00}{\metre}). The mean height of \textit{C. monogyna} was closer to that of the tallest shrub species, \textit{C. laurifolius} (\qty{0.67}{\metre}), than to the other tree species. \textit{E. vagans} (\qty{0.21}{\metre}) and \textit{L. stoechas} (\qty{0.13}{\metre}) had the lowest mean heights.
 
-The species means hid an overlap at mask level. Six tree masks had mean heights below \qty{1}{\metre}: three \textit{Q. ilex}, two \textit{P. pinaster} and one \textit{C. monogyna}. That range was also reached by \textit{C. laurifolius} masks (up to \qty{1.03}{\metre}). The 90th-percentile height (P90) ranged from 0 to \qty{1.46}{\metre} in shrub masks and from 1.35 to \qty{6.75}{\metre} in tree masks. No CHM cell inside any shrub mask exceeded \qty{1.63}{\metre}. The CHM also contained negative values down to \qty{-0.05}{\metre}, a noise level close to the mean height of \textit{L. stoechas} (\qty{0.13}{\metre}).
+Species-level means nevertheless concealed substantial overlap at the individual-mask level. Six tree masks had mean heights below \qty{1}{\metre}: three \textit{Q. ilex}, two \textit{P. pinaster}, and one \textit{C. monogyna}. Similar values were reached by \textit{C. laurifolius} masks, whose mean heights extended up to \qty{1.03}{\metre}. P90 ranged from 0 to \qty{1.46}{\metre} in shrub masks and from 1.35 to \qty{6.75}{\metre} in tree masks. No CHM cell within any shrub mask exceeded \qty{1.63}{\metre}. The CHM also contained slightly negative values, reaching \qty{-0.05}{\metre}, which were within the expected near-ground noise range and were close in magnitude to the mean height of \textit{L. stoechas} (\qty{0.13}{\metre}).
+
+P90 was preferred over maximum height because it was less sensitive to isolated high returns. For example, two \textit{L. stoechas} masks had maximum heights of 1.52 and \qty{1.54}{\metre}, whereas their P90 values were only 0.22 and \qty{0.33}{\metre}, respectively.
 
 \begin{figure}[ht]
     \centering
@@ -523,22 +546,22 @@ The species means hid an overlap at mask level. Six tree masks had mean heights 
     \label{fig:species_mean_height}
 \end{figure}
 
-Table~\ref{tab:refinement_calibration} shows how the threshold combinations classified the field-reference masks. A tall-cell fraction of 0 produced the same results as 0.1 at every height, because P90 $> h$ already implies that about \qty{10}{\percent} of the cells exceed $h$. Fractions above 0.1 reduced the number of rejected trees without protecting any additional shrub.
+Table~\ref{tab:refinement_calibration} summarizes the outcomes produced by the tested threshold combinations. A tall-cell fraction of 0 produced the same classifications as 0.1 at every tested height; therefore, only results for fractions of 0.1 or greater are shown. In this dataset, masks satisfying P90 $> h$ also had approximately \qty{10}{\percent} or more of their valid cells above $h$. Increasing the tall-cell fraction beyond 0.1 reduced the number of rejected trees without protecting any additional shrub masks.
 
-Lowering $h$ increased tree rejection but started to affect shrubs. At \qty{1.5}{\metre}, 18 of 21 trees were rejected and no shrub was rejected, but six shrub masks were clipped, and the threshold was only \qty{4}{\centi\metre} above the highest shrub P90 (\textit{C. laurifolius}, \qty{1.46}{\metre}). At \qty{1.3}{\metre}, one shrub mask was rejected.
+Lower values of $h$ increased tree rejection but also began to affect shrubs. At \qty{1.5}{\metre}, 18 of 21 trees were rejected and no shrub was rejected, but six shrub masks were clipped. Moreover, this threshold was only \qty{4}{\centi\metre} above the highest shrub P90, observed in \textit{C. laurifolius} (\qty{1.46}{\metre}). At \qty{1.3}{\metre}, one shrub mask was rejected.
 
-Applying the selection rule gave P90 $>$ \qty{1.7}{\metre} with a tall-cell fraction $\geq$ 0.1. This rejected 14 trees, clipped 4 and retained 3, without rejecting or clipping any shrub, since \qty{1.7}{\metre} lies above every shrub cell in the sample.
+Applying the predefined selection rule resulted in a height threshold of \qty{1.7}{\metre} and a tall-cell fraction of 0.1. This combination rejected 14 trees, clipped 4, and retained 3, while neither rejecting nor clipping any shrub mask. The selected threshold also exceeded the maximum CHM cell height observed within shrubs (\qty{1.63}{\metre}).
 
 \begin{table}[ht]
     \centering
     \caption{
-        Outcome of the refinement rule on the field-reference masks (21 trees, 58 shrubs) for each combination of P90 threshold and tall-cell fraction (minimum coverage 0.3). Ten shrub masks had insufficient LiDAR support in all combinations. The selected combination is in bold.
+        Outcome of the refinement rule on the field-reference masks (21 trees, 58 shrubs) for each tested combination of height threshold and tall-cell fraction (minimum coverage 0.3). Ten shrub masks had insufficient LiDAR support in all combinations. Combinations with a tall-cell fraction of 0 are omitted because they produced the same classifications as a fraction of 0.1. The selected combination is shown in bold.
     }
     \label{tab:refinement_calibration}
     \resizebox{\textwidth}{!}{%
         \begin{tabular}{ccccccc}
             \toprule
-            P90 $>$ (\unit{\metre}) & Tall fraction $\geq$ & Trees rejected & Trees clipped & Trees retained & Shrubs rejected & Shrubs clipped \\
+            Height threshold $h$ (\unit{\metre}) & Tall fraction $\geq$ & Trees rejected & Trees clipped & Trees retained & Shrubs rejected & Shrubs clipped \\
             \midrule
             1.3 & 0.1 & 21 & 0 & 0 & 1 & 6 \\
             1.3 & 0.3 & 19 & 2 & 0 & 1 & 6 \\
@@ -557,23 +580,23 @@ Applying the selection rule gave P90 $>$ \qty{1.7}{\metre} with a tall-cell frac
     }
 \end{table}
 
-With a minimum coverage of 0.5, two \textit{P. pinaster} masks (coverage 0.44 and 0.48) would also have had insufficient support, and the selected combination would have rejected 13 trees instead of 14.
+The three retained trees were one \textit{Q. ilex} (P90 = \qty{1.35}{\metre}), one \textit{P. pinaster} (\qty{1.44}{\metre}), and one \textit{C. monogyna} (\qty{1.37}{\metre}). None contained a CHM cell above \qty{1.7}{\metre}, and their P90 values were below that of the tallest \textit{C. laurifolius} mask. Consequently, these individuals could not be separated from shrubs using CHM height alone. \textit{C. monogyna} can also occur as a tall shrub, further limiting its separation based solely on height. The four clipped trees had P90 values between 1.55 and \qty{1.69}{\metre}.
 
-The three retained trees were one \textit{Q. ilex} (P90 = \qty{1.35}{\metre}), one \textit{P. pinaster} (\qty{1.44}{\metre}) and one \textit{C. monogyna} (\qty{1.37}{\metre}). None contained a cell above \qty{1.7}{\metre}, and their P90 values were below that of the tallest \textit{C. laurifolius}, so they could not be separated from shrubs by height alone. \textit{C. monogyna} also commonly grows as a tall shrub. The four clipped trees had P90 between 1.55 and \qty{1.69}{\metre}.
+The minimum-coverage criterion had only a limited influence on threshold selection. Increasing the minimum coverage from 0.3 to 0.5 would have classified two additional \textit{P. pinaster} masks, with coverage values of 0.44 and 0.48, as having insufficient support. Under this criterion, the selected parameter combination would have rejected 13 trees instead of 14.
 
-P90 was preferred over maximum height because it was robust to isolated returns. Two \textit{L. stoechas} masks had maximum heights of 1.52 and \qty{1.54}{\metre} but P90 of only 0.22 and \qty{0.33}{\metre}.
+In the leave-one-ROI-out procedure, the selection rule chose \qty{1.7}{\metre} with a tall-cell fraction of 0.1 in 25 of the 26 folds. In the remaining fold, exclusion of one tree made thresholds of 1.7 and \qty{1.9}{\metre} equivalent on the training masks, and \qty{1.9}{\metre} was selected according to the predefined tie-breaking rule. Pooled across the held-out folds, 13 of 21 trees were rejected, 4 were clipped, and 4 were retained, while no shrub was rejected or clipped. Thus, leave-one-ROI-out validation reduced tree rejection by only one mask relative to the full calibration sample while preserving the absence of shrub modification.
 
-In the leave-one-ROI-out procedure, the selection rule chose \qty{1.7}{\metre} with a tall-cell fraction of 0.1 in 25 of the 26 folds. In the remaining fold, leaving out one tree made 1.7 and \qty{1.9}{\metre} equivalent on the training masks, and \qty{1.9}{\metre} was selected. Pooled over folds, the held-out masks gave 13 of 21 trees rejected, 4 clipped and 4 retained, with no shrub rejected or clipped. This is one tree fewer than in the calibration sample.
-
-When clipping shrubs was allowed during selection, \qty{1.5}{\metre} was chosen in 25 folds. When the ROI containing the tallest \textit{C. laurifolius} was held out, the threshold dropped to \qty{1.3}{\metre} and that shrub was rejected. This indicates that a threshold placed above all shrub heights, rather than just above the highest shrub P90, generalizes better to unseen masks.
+As a sensitivity analysis, the selection procedure was repeated while allowing shrub clipping. Under this alternative criterion, \qty{1.5}{\metre} was selected in 25 folds. However, when the ROI containing the tallest \textit{C. laurifolius} mask was held out, the selected threshold decreased to \qty{1.3}{\metre}, causing that shrub to be rejected when evaluated as the held-out observation. This result suggests that requiring zero shrub modification during calibration favored a more conservative threshold that was more robust to unseen shrub masks. In particular, the selected threshold of \qty{1.7}{\metre} remained above the maximum shrub-cell height observed in the calibration sample (\qty{1.63}{\metre}).
 
 \subsection{Shrub maps of the study area}
 
-Each model was deployed over the Encinacorba orthomosaic at its FW operating point (\qty{45}{\percent} for Mask R-CNN and \qty{60}{\percent} for SAM 3). After the tile predictions were merged, the Mask R-CNN map contained 1,726 shrub polygons covering \qty{7909}{\square\metre}, and the SAM 3 map contained 3,377 polygons covering \qty{15700}{\square\metre}. The median polygon area was \qty{2.5}{\square\metre} for Mask R-CNN and \qty{3.1}{\square\metre} for SAM 3. SAM 3 therefore predicted about twice as many objects and twice the area as Mask R-CNN.
+Each model was deployed over the Encinacorba orthomosaic at its FW operating point (\qty{45}{\percent} for Mask R-CNN and \qty{60}{\percent} for SAM 3). After the tile predictions were merged, the Mask R-CNN map contained 1,726 shrub polygons covering \qty{7909}{\square\metre}, whereas the SAM 3 map contained 3,377 polygons covering \qty{15700}{\square\metre}. The median polygon area was \qty{2.5}{\square\metre} for Mask R-CNN and \qty{3.1}{\square\metre} for SAM 3. At the map scale, SAM 3 therefore produced approximately twice as many predicted objects and twice the mapped area as Mask R-CNN.
 
 \subsection{Cross-domain validation in the study area}
 
-Both models transferred poorly to the field reference of the study area (Table~\ref{tab:field_validation}). Mask R-CNN matched 1 of the 58 reference shrubs (recall \qty{1.7}{\percent}) and SAM 3 matched 2 (recall \qty{3.4}{\percent}). F1 was \qty{3.2}{\percent} for Mask R-CNN and \qty{6.1}{\percent} for SAM 3, compared with \qty{75.2}{\percent} and \qty{78.3}{\percent} at the same operating points on the JuniperMapper FW dataset. These two sets of values are not directly equivalent metrics. The JuniperMapper figures were obtained with S-IoU~=~0.50, which scores each instance against the union of all overlapping counterparts, whereas the study-area validation used greedy one-to-one matching with IoU~$\geq$~0.10 against a small, plot-based field reference. The difference therefore should not be read as a simple domain-transfer decrease of about 72 percentage points. It nonetheless shows that the deployed models recovered almost none of the reference shrubs, even under a much more lenient overlap requirement.
+Both models transferred poorly to the field reference of the study area (Table~\ref{tab:field_validation}). Mask R-CNN matched 1 of the 58 reference shrubs (recall \qty{1.7}{\percent}), whereas SAM 3 matched 2 (recall \qty{3.4}{\percent}). F1 was \qty{3.2}{\percent} for Mask R-CNN and \qty{6.1}{\percent} for SAM 3, compared with \qty{75.2}{\percent} and \qty{78.3}{\percent}, respectively, at the same operating points on the JuniperMapper FW dataset.
+
+These two sets of values are not directly equivalent metrics. The JuniperMapper results were obtained using S-IoU~=~0.50, which scores each instance against the union of all overlapping counterparts, whereas the study-area validation used greedy one-to-one matching with IoU~$\geq$~0.10 against a small, plot-based field reference. The difference should therefore not be interpreted as a simple domain-transfer decrease of approximately 72 percentage points. Nevertheless, the study-area results show that both deployed models recovered almost none of the reference shrubs, even under the more lenient overlap requirement.
 
 \begin{table}[ht]
     \centering
@@ -593,26 +616,32 @@ Both models transferred poorly to the field reference of the study area (Table~\
     }
 \end{table}
 
-The matched shrubs differed in quality between models (Figure~\ref{fig:map_predictions}). The two SAM 3 matches were \textit{C. laurifolius} crowns of 4.0 and \qty{13.7}{\square\metre}, delineated with IoU values of 0.81 and 0.89 and confidence scores of \qty{88}{\percent} and \qty{95}{\percent}. Both predictions lay mostly outside the plots and were counted as true positives because matched predictions were scored wherever they lay. The single Mask R-CNN match was a \qty{5.1}{\square\metre} prediction centered on a \textit{C. monogyna} tree (IoU 0.49 with the tree polygon, first row of the Figure~\ref{fig:map_predictions}). It overlapped a \qty{0.8}{\square\metre} \textit{L. stoechas} polygon with an IoU of 0.106, just above the matching threshold of 0.10. It therefore met the matching criterion but did not delineate that shrub. Under a matching threshold of 0.25, Mask R-CNN would have had no true positive.
+Detection was strongly species dependent. Neither model detected any of the 4 \textit{E. vagans} masks (Figure~\ref{fig:map_predictions}). The 46 \textit{L. stoechas} masks, which represented \qty{79}{\percent} of the reference shrubs, were detected only through the marginal Mask R-CNN match described below. SAM 3 detected 2 of the 8 \textit{C. laurifolius} masks, whereas Mask R-CNN detected none.
+
+Tree commission was also substantial before LiDAR refinement. All in-plot false positives from both models fell on trees. The three Mask R-CNN false positives overlapped \textit{Q. ilex} crowns. Of the six SAM 3 false positives, four overlapped \textit{Q. ilex}, one \textit{P. pinaster}, and one \textit{C. monogyna}. Considering predictions beyond the plot boundaries, Mask R-CNN matched 6 of the 21 reference trees (3 \textit{Q. ilex}, 2 \textit{P. pinaster}, and 1 \textit{C. monogyna}; median IoU 0.39), whereas SAM 3 matched 13 (8 \textit{Q. ilex}, 4 \textit{P. pinaster}, and 1 \textit{C. monogyna}; median IoU 0.55). SAM 3 delineated several tree crowns closely, with IoU values above 0.88 for four of them.
+
+The few matched shrubs differed markedly in delineation quality between models (Figure~\ref{fig:map_predictions}). The two SAM 3 matches corresponded to \textit{C. laurifolius} crowns of 4.0 and \qty{13.7}{\square\metre}, delineated with IoU values of 0.81 and 0.89 and confidence scores of \qty{88}{\percent} and \qty{95}{\percent}, respectively. Both predictions lay mostly outside the plots and were counted as true positives because matched predictions were scored wherever they extended.
+
+The single Mask R-CNN match was qualitatively different. It consisted of a \qty{5.1}{\square\metre} prediction centered on a \textit{C. monogyna} tree, with an IoU of 0.49 against the tree polygon (first row of Figure~\ref{fig:map_predictions}). The prediction also overlapped a \qty{0.8}{\square\metre} \textit{L. stoechas} polygon with an IoU of 0.106, only slightly above the matching threshold of 0.10. It therefore satisfied the formal matching criterion but did not delineate the shrub itself. With an IoU threshold of 0.25, Mask R-CNN would have had no true positive.
 
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=1\textwidth]{figures/fig_map_plots_evaluation_nomatterport.png}
+    \includegraphics[width=0.8\textwidth]{figures/fig_map_plots_evaluation_nomatterport.png}
     \caption{
-        Shrubs predicted by each model compared with the reference shrub and tree masks. Each row shows a representative validation plot, with the species present and their percent cover in parentheses.
+        Shrubs predicted by each model compared with the reference shrub and tree masks. Each row shows a representative validation plot, with the species present and their percent cover in parentheses. Reference-mask IDs are displayed for the corresponding shrub and tree masks.
     }
     \label{fig:map_predictions}
 \end{figure}
 
-Detection was strongly species dependent. Neither model detected any of the 4 \textit{E. vagans} masks (Figure~\ref{fig:map_predictions}), and the 46 \textit{L. stoechas} masks, which made up \qty{79}{\percent} of the reference shrubs, were detected only through the marginal Mask R-CNN match described above. SAM 3 detected 2 of the 8 \textit{C. laurifolius} masks, and Mask R-CNN detected none.
-
-All in-plot false positives of both models fell on trees. The three Mask R-CNN false positives overlapped \textit{Q. ilex} crowns. Of the six SAM 3 false positives, four overlapped \textit{Q. ilex}, one \textit{P. pinaster} and one \textit{C. monogyna}. Outside the plots, the predictions also matched many reference trees. Mask R-CNN matched 6 of the 21 trees (3 \textit{Q. ilex}, 2 \textit{P. pinaster} and 1 \textit{C. monogyna}; median IoU 0.39), and SAM 3 matched 13 (8 \textit{Q. ilex}, 4 \textit{P. pinaster} and 1 \textit{C. monogyna}; median IoU 0.55). SAM 3 delineated several tree crowns closely, with IoU values above 0.88 for four of them.
-
-Precision was \qty{25}{\percent} for both models, but it was calculated from only 4 and 8 scored predictions. It is therefore too unstable to rank the models.
+Precision was \qty{25}{\percent} for both models, but it was calculated from only 4 scored predictions for Mask R-CNN and 8 for SAM 3. Precision was therefore too unstable to provide a meaningful basis for ranking the two models.
 
 \subsection{Effect of LiDAR refinement}
 
-Over the whole map, the refinement removed most of the predicted area (Table~\ref{tab:refinement_outcome}). For Mask R-CNN, 715 of the 1,726 predictions (\qty{41.4}{\percent}) were rejected as trees. They covered \qty{5319}{\square\metre}, or \qty{67.2}{\percent} of the mapped area. For SAM 3, 1,942 of the 3,377 predictions (\qty{57.5}{\percent}) were rejected, covering \qty{12053}{\square\metre} (\qty{76.8}{\percent}). The median P90 of the rejected predictions was \qty{2.48}{\metre} for Mask R-CNN and \qty{2.50}{\metre} for SAM 3, compared with \qty{0.79}{\metre} and \qty{1.04}{\metre} for the predictions left unchanged. A further 138 Mask R-CNN and 237 SAM 3 predictions were clipped. Clipping removed only \qty{32}{\square\metre} and \qty{44}{\square\metre}, respectively, and no clipped prediction fell below the \qty{0.25}{\square\metre} minimum. Of the remaining predictions, 130 (Mask R-CNN) and 205 (SAM 3) had insufficient LiDAR support and were retained without modification. After refinement, the Mask R-CNN map contained 1,011 polygons covering \qty{2559}{\square\metre}, and the SAM 3 map contained 1,435 polygons covering \qty{3603}{\square\metre}.
+LiDAR refinement substantially reduced both shrub maps, particularly the SAM 3 output (Table~\ref{tab:refinement_outcome}). For Mask R-CNN, 715 of the 1,726 predictions (\qty{41.4}{\percent}) were rejected as trees, accounting for \qty{5319}{\square\metre}, or \qty{67.2}{\percent}, of the originally mapped area. For SAM 3, 1,942 of the 3,377 predictions (\qty{57.5}{\percent}) were rejected, accounting for \qty{12053}{\square\metre} (\qty{76.8}{\percent}) of the mapped area.
+
+Rejected predictions had substantially greater CHM heights than predictions retained unchanged. Their median P90 was \qty{2.48}{\metre} for Mask R-CNN and \qty{2.50}{\metre} for SAM 3, compared with \qty{0.79}{\metre} and \qty{1.04}{\metre}, respectively, for unchanged predictions. A further 138 Mask R-CNN predictions and 237 SAM 3 predictions were clipped. Clipping removed only \qty{32}{\square\metre} and \qty{44}{\square\metre}, respectively, and no clipped prediction fell below the \qty{0.25}{\square\metre} minimum. Another 130 Mask R-CNN predictions and 205 SAM 3 predictions had insufficient LiDAR support and were therefore retained without modification.
+
+After refinement, the Mask R-CNN map contained 1,011 polygons covering \qty{2559}{\square\metre}, whereas the SAM 3 map contained 1,435 polygons covering \qty{3603}{\square\metre}.
 
 \begin{table}[ht]
     \centering
@@ -632,7 +661,9 @@ Over the whole map, the refinement removed most of the predicted area (Table~\re
     }
 \end{table}
 
-Against the field reference, the refinement removed tree commission without losing any matched shrub (Table~\ref{tab:refinement_validation}). The trees matched by predictions fell from 6 to 1 for Mask R-CNN and from 13 to 3 for SAM 3. The tree-commission rate fell from \qty{28.6}{\percent} to \qty{4.8}{\percent} and from \qty{61.9}{\percent} to \qty{14.3}{\percent}, respectively. All three in-plot Mask R-CNN false positives and four of the six SAM 3 false positives were rejected. Precision therefore rose from \qty{25}{\percent} to \qty{100}{\percent} for Mask R-CNN and from \qty{25}{\percent} to \qty{50}{\percent} for SAM 3. Recall did not change, so F1 increased only marginally, to \qty{3.4}{\percent} and \qty{6.5}{\percent}.
+Against the field reference, the refinement substantially reduced tree commission without losing any matched shrub (Table~\ref{tab:refinement_validation}). The number of reference trees matched by predictions fell from 6 to 1 for Mask R-CNN and from 13 to 3 for SAM 3. Correspondingly, tree commission decreased from \qty{28.6}{\percent} to \qty{4.8}{\percent} for Mask R-CNN and from \qty{61.9}{\percent} to \qty{14.3}{\percent} for SAM 3.
+
+All three in-plot Mask R-CNN false positives and four of the six SAM 3 false positives were rejected. Precision therefore increased from \qty{25}{\percent} to \qty{100}{\percent} for Mask R-CNN and from \qty{25}{\percent} to \qty{50}{\percent} for SAM 3. Recall remained unchanged because no matched shrub was removed. Consequently, F1 increased only marginally, from \qty{3.2}{\percent} to \qty{3.4}{\percent} for Mask R-CNN and from \qty{6.1}{\percent} to \qty{6.5}{\percent} for SAM 3.
 
 \begin{table}[ht]
     \centering
@@ -654,26 +685,29 @@ Against the field reference, the refinement removed tree commission without losi
     }
 \end{table}
 
-The two SAM 3 \textit{C. laurifolius} matches were retained unchanged, with the same IoU values (Figure~\ref{fig:map_refined_predictions}). The single Mask R-CNN true positive, the prediction on the \textit{C. monogyna} tree, was clipped (P90 \qty{1.51}{\metre}) and kept. It still overlapped the \textit{L. stoechas} polygon with IoU 0.107. The Mask R-CNN precision of \qty{100}{\percent} therefore rests on one prediction that mainly covers a tree.
+The refinement did not remove any of the matched shrub predictions. The two SAM 3 \textit{C. laurifolius} matches were retained unchanged and therefore maintained their original IoU values (Figure~\ref{fig:map_refined_predictions}). The single Mask R-CNN true positive was clipped but retained. This prediction, which was centered on the \textit{C. monogyna} tree, had a P90 of \qty{1.51}{\metre} and continued to overlap the \textit{L. stoechas} reference polygon with an IoU of 0.107 after clipping. The resulting Mask R-CNN precision of \qty{100}{\percent} should therefore be interpreted cautiously because it is based on a single prediction that still predominantly covers a tree.
 
-The trees that were still matched after refinement were those that the calibration had already shown to be inseparable from shrubs by height. Both models still matched \textit{C. monogyna} tree 44, whose reference mask had a P90 of \qty{1.37}{\metre} and was retained in the calibration. SAM 3 also still matched \textit{Q. ilex} tree 65 (reference P90 \qty{1.35}{\metre}, also retained in the calibration) with IoU 0.83, and \textit{Q. ilex} tree 58 through a \qty{4.5}{\square\metre} prediction with a P90 of \qty{0.96}{\metre}. The two SAM 3 false positives that remained in the plots were the predictions on \textit{C. monogyna} (P90 \qty{1.51}{\metre}) and on \textit{Q. ilex} tree 58. Neither contained any CHM cell above \qty{1.7}{\metre}, so both were left unchanged.
+The trees that remained matched after refinement were largely those that the calibration procedure had already shown to be inseparable from shrubs using CHM height alone. Both models continued to match \textit{C. monogyna} tree 44, whose reference mask had a P90 of \qty{1.37}{\metre} and had been retained during calibration. SAM 3 also continued to match \textit{Q. ilex} tree 65, whose reference mask had a P90 of \qty{1.35}{\metre} and had likewise been retained during calibration, with an IoU of 0.83. In addition, SAM 3 matched \textit{Q. ilex} tree 58 through a \qty{4.5}{\square\metre} prediction with a P90 of \qty{0.96}{\metre}.
+
+The two SAM 3 false positives that remained within the validation plots corresponded to predictions on \textit{C. monogyna} (P90 \qty{1.51}{\metre}) and \textit{Q. ilex} tree 58. Neither prediction contained a CHM cell above \qty{1.7}{\metre}, so neither satisfied the clipping or rejection criteria.
 
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=1\textwidth]{figures/fig_map_plots_lidar_refinement_nomatterport.png}
+    \includegraphics[width=0.8\textwidth]{figures/fig_map_plots_lidar_refinement_nomatterport.png}
     \caption{
-        Refined shrub maps of each model compared with the reference shrub and tree masks. Each row shows a representative validation plot, with the species present and their percent cover in parentheses.
+        Refined shrub maps of each model compared with the reference shrub and tree masks. Each row shows a representative validation plot, with the species present and their percent cover in parentheses. Reference-mask IDs are displayed for the corresponding shrub and tree masks.
     }
     \label{fig:map_refined_predictions}
 \end{figure}
 
+
 \subsection{Qualitative error analysis}
 
-Visual inspection identified two recurrent error types (Figure~\ref{fig:visual_inspection}). First, shadowed regions were occasionally classified as shrubs and were not removed by the LiDAR height filter because their estimated heights did not resemble tree crowns. Second, some Mask R-CNN masks showed straight boundaries corresponding to inference-tile edges. Comparable tile-boundary artifacts were not visually evident in the SAM 3 output.
+Visual inspection identified two recurrent error types (Figure~\ref{fig:visual_inspection}). First, shadowed regions were occasionally classified as shrubs and remained after LiDAR refinement because their CHM height profiles did not satisfy the tree-removal criteria. Second, some Mask R-CNN masks exhibited straight boundaries corresponding to inference-tile edges. Comparable tile-boundary artifacts were not visually evident in the SAM 3 output.
 
 \begin{figure}[ht]
     \centering
-    \includegraphics[width=1\textwidth]{figures/noyet.png}
+    % \includegraphics[width=1\textwidth]{figures/noyet.png}
     \caption{
         Errors of the two models identified by visual inspection in shadowed regions (column A) and along straight boundaries (column B).
     }
@@ -682,73 +716,92 @@ Visual inspection identified two recurrent error types (Figure~\ref{fig:visual_i
 
 \section{Discussion}
 
-The current trained Mask R-CNN model differed slightly to the one trained in \citet{khaldi2024individual}. Although both models share hyperparameters and training strategy, 
-Comparing the best F1 achieved on each dataset (Table A1), our model was within 1.7 percentage points of the original on the PI test set across all four evaluation criteria (e.g. IoU~=~0.50: \qty{84.8}{\percent} vs \qty{84.84}{\percent}; S-IoU~=~0.50: \qty{88.6}{\percent} vs \qty{87.87}{\percent}). On the FW dataset it was 1.1–2.6 points lower at a threshold of 0.50 and at IoU~=~0.75, and 4.1 points lower for S-IoU~=~0.75 (\qty{64.2}{\percent} vs \qty{68.32}{\percent}). At the original study's confidence thresholds (\qty{90}{\percent} for PI and \qty{50}{\percent} for FW), our model was 1.5–4.4 points lower. It retained fewer predictions (543 vs 646 on PI and 1,345 vs 1,706 on FW), with higher precision and lower recall. Our model therefore assigned lower confidence scores than the original, which shifted its FW optimum from \qty{50}{\percent} to \qty{35}{\percent}, while its achievable segmentation performance remained comparable. This difference in score behavior between two training runs of the same architecture supports deriving operating points separately for each model rather than adopting a fixed value from previous work. The confidence-threshold responses were also qualitatively consistent with the original study. On the PI data, F1 increased with confidence and peaked at a high threshold (\qty{80}{\percent} vs \qty{90}{\percent}). On the FW data, F1 rose rapidly and then formed a broad plateau, although ours extended over a narrower range (\qtyrange{20}{45}{\percent} vs \qtyrange{20}{85}{\percent}). Both studies showed a similar decrease from PI to FW data at a threshold of 0.50 (14.4 and 12.8 points for IoU and S-IoU, vs 12.45 and 11.01). This indicates that the domain shift between photo-interpreted and field-based references is reproducible. At a threshold of 0.75, however, the S-IoU decrease was larger in our study (20.8 vs 16.5 points), suggesting that our model fragmented or merged field-observed crowns more often. The domain-adapted SAM 3 model exceeded the original JuniperMapper performance under seven of the eight criteria, by 1.4–6.6 points, and matched it for FW S-IoU~=~0.75 (\qty{68.4}{\percent} vs \qty{68.32}{\percent}). The largest gains were for IoU~=~0.75 (PI \qty{80.5}{\percent} vs \qty{73.95}{\percent}; FW \qty{53.6}{\percent} vs \qty{47.91}{\percent}), indicating more accurate crown delineation rather than only more detections.
+\subsection{Model performance and transferability within the JuniperMapper domain}
 
-However, overall the IoU and S-IoU metrics of both models follow a similar shape, with S-IoU's F1-score consistently higher than IoU's.
+The Mask R-CNN implementation reproduced the performance reported by \citet{khaldi2024individual} reasonably well, despite differences in the confidence-score distributions between the two training runs. On the PI test set, the maximum F1 scores differed by less than 1.7 percentage points across the four evaluation criteria, while somewhat larger differences were observed on the FW dataset. More importantly, the overall response to the confidence threshold was similar in both studies: performance on the PI data peaked at relatively high confidence values, whereas the FW data produced a broader optimum at lower confidence values. This consistency indicates that the reproduced model retained the general behavior of the original implementation even though its confidence scores were not identically calibrated.
 
-the Mask R-CNN model trained in this study closely matched the performance reported for the original JuniperMapper model (Khaldi et al., 2024).
+The differences in confidence scores are relevant for model deployment. The Mask R-CNN trained here retained fewer predictions than the model reported by \citet{khaldi2024individual} when evaluated at the thresholds used in the original study, resulting in higher precision but lower recall. Its optimal FW threshold was consequently lower. This demonstrates that confidence thresholds should be calibrated for each trained model rather than transferred directly from previous experiments, even when the architecture, training dataset, and principal hyperparameters are shared. The same consideration applies when comparing different architectures because confidence scores from Mask R-CNN and SAM 3 are not calibrated on a common scale. The use of architecture-specific operating points in this study therefore represents the intended operating behavior of each model rather than a direct comparison of equal numerical confidence values.
 
-S-IoU credits a prediction against the union of all overlapping ground-truth instances rather than requiring a single one-to-one match, so fragmented or merged canopy predictions still count as (partial) successes. This directional definition also means that, for S-IoU, the true positives entering the precision calculation are not the same instances as those entering the recall calculation: precision uses prediction-directed matches (each prediction scored against its unioned overlapping ground truths), while recall and its false negatives are computed independently, label-directed (each ground truth scored against its unioned overlapping predictions). As a result, TP + FN does not equal the total number of ground-truth instances for the S-IoU rows below, unlike the IoU rows, where one-to-one matching guarantees the two are consistent. The IoU-based F1 slightly increase for Mask R-CNN with confidence could indicate that higher-scoring predictions delineated crown boundaries more accurately. The S-IoU-based F1 exceeded IoU-based F1 at every confidence threshold for both models, and this could suggest that a substantial share of errors under the stricter criterion arose from fragmented or merged crowns and boundary misplacement rather than from undetected shrubs. The IoU and S-IoU curves converged at high confidence thresholds. Fragmentation and merging errors were therefore concentrated among lower-confidence predictions, whereas the most confident predictions generally corresponded to single, well-delineated crowns.
+Within the JuniperMapper datasets, domain-adapted SAM 3 consistently performed better than the Mask R-CNN reproduction. The improvement was modest at the 0.50 matching threshold but became more evident for IoU~=~0.75, where accurate delineation of individual crowns is required. This suggests that the advantage of SAM 3 was not limited to detecting a larger number of shrubs but also involved more accurate spatial delineation. Nevertheless, the difference between the two architectures was comparatively small relative to the much larger performance decline observed when either model was transferred to the independent study area.
 
-SAM 3 Zero-Shot BAD FOR DOMAIN SPECIFIC TASKS. Zero-shot mask AP falls from 56.4 (COCO) to 15.2 on a 100-domain specialized benchmark (Dabaja and Çelík 2026), i.e. zero-shot text-prompt segmentation degrades sharply outside SAM 3's pretraining distribution and cannot be assumed to transfer to vegetation/remote-sensing imagery without domain-specific evaluation. In an orchard fruit-annotation study (Wang, 2026), SAM 3 reached higher recall than SAM (\qty{91}{\percent} vs. \qty{81}{\percent}) but markedly lower precision (\qty{29}{\percent} vs. \qty{42}{\percent}) — i.e. SAM 3's dominant failure mode is over-segmentation / false positives, not missed detections. In remote sensing, text prompts inject a ground-level semantic bias that degrades coordinate regression on overhead imagery, while visual (exemplar) prompts align well to overhead geometry (Dabaja and Çelík 2026). Our imagery (Zenmuse L1 orthomosaics, \qty{5}{\centi\metre} GSD) is exactly this overhead case.
+The comparison between IoU and S-IoU provides additional information on the type of segmentation errors. S-IoU-based F1 was consistently higher than conventional IoU-based F1 because S-IoU accommodates fragmented and merged crowns by evaluating an instance against the union of its overlapping counterparts. The larger difference between these metrics on the FW dataset than on the PI test set indicates that crown fragmentation, merging, or boundary disagreement became more important when the models were evaluated against field-derived annotations. In Mask R-CNN, IoU-based performance also tended to improve with increasing prediction confidence, suggesting that highly confident predictions generally had more accurate crown boundaries. These results reinforce the value of reporting both metrics because conventional IoU alone can penalize geometrically plausible predictions when individual shrub crowns are difficult to separate.
 
-S-IoU-based F1 exceeded IoU-based F1 at every confidence threshold for both models, but the differences in PI were smaller than on the FW dataset. This could indicate that fragmentation, merging and boundary errors had less influence on performance within the photo-interpretation domain.
+The SAM 3 prompt-sensitivity experiment further showed that the domain-adapted model was relatively insensitive to closely related category names. Generic descriptions such as ``shrub'', ``bush'', ``low shrub'', and ``Mediterranean shrub'' produced very similar validation performance, whereas prompts including condition or color descriptors performed worse. Thus, after domain adaptation, the exact synonym used to describe the target appears less important than avoiding unnecessarily restrictive semantic modifiers. Because these alternatives were evaluated on the same validation data used during model development, however, these differences should be interpreted as exploratory rather than as evidence for an optimized prompt.
 
-SAM 3 has evaluated internally with shrub prompt, but then several one has been tested. There could be a slightly decrease in performance because the confidence value to select masks has not been set programmatically with each prompt. Maybe account that in further research.
+\subsection{Cross-domain transfer to post-fire Mediterranean shrubland}
 
-Notably, the best domain-adapted SAM 3 checkpoints modestly outperform the Mask R-CNN reproduction (Section 4.1) at matched IoU~=~0.50 and S-IoU~=~0.50 operating points on both test sets: \qty{88.5}{\percent} vs. \qty{84.8}{\percent} F1 (IoU~=~0.50) on PI, and \qty{74.9}{\percent} vs. \qty{70.4}{\percent} on FW. This suggests that, despite starting from a much weaker zero-shot baseline, lightweight frozen-backbone decoder fine-tuning lets SAM 3 match or exceed a fully fine-tuned Mask R-CNN on this dataset — provided the checkpoint is taken before the numerical instability identified above (epoch 19 was the last checkpoint before it).
+The main limitation identified in this study was the poor transfer of both RGB-based models from JuniperMapper to the Encinacorba study area. Although both architectures achieved high performance on the JuniperMapper PI and FW datasets, they recovered very few of the 58 field-reference shrubs in Encinacorba. These results cannot be converted directly into a numerical domain-transfer loss because the JuniperMapper and study-area evaluations used different matching procedures. Nevertheless, the extremely low recall in Encinacorba, despite the lenient IoU threshold used for validation, demonstrates that the principal problem was not the choice of evaluation metric but the inability of the transferred models to detect the shrub community present in the new environment.
 
+The discrepancy is consistent with a substantial domain shift between the training and deployment vegetation. JuniperMapper was developed for the delineation of medium- and large-sized \textit{Juniperus} individuals, whereas the post-fire community at Encinacorba contains abundant low-stature species, particularly \textit{L. stoechas}, together with bare soil, necromass, grasses, shadows, and structurally heterogeneous woody vegetation. Visual inspection showed that the models preferentially detected taller and more conspicuous vegetation while many small \textit{L. stoechas} individuals were missed. Similar difficulties have been reported for low-stature shrub communities with patchy canopies and mixtures of co-occurring vegetation \citep{uyeda2020vegetation}. The results therefore indicate that transfer learning from a morphologically different shrub dataset was insufficient to bridge this ecological and structural difference.
 
+This finding also places the comparison between Mask R-CNN and SAM 3 in context. SAM 3 clearly performed better within the JuniperMapper domain and generated approximately twice as many polygons and twice the mapped shrub area when deployed over Encinacorba. However, neither architecture achieved adequate recall against the independent field reference. Furthermore, precision estimates in the study area were based on only four scored Mask R-CNN predictions and eight SAM 3 predictions and are therefore too unstable to support a reliable ranking between architectures. The apparent \qty{100}{\percent} precision of Mask R-CNN after LiDAR refinement is particularly misleading because it was based on a single retained prediction that predominantly corresponded to a \textit{C. monogyna} tree and overlapped a small \textit{L. stoechas} reference polygon only marginally. Consequently, the independent validation provides stronger evidence of a general transferability limitation than of a meaningful performance difference between the two RGB models.
 
-The models mostly predict taller vegetation and miss the low \textit{Lavandula}. That suggested a recall and domain problem, and CHM filtering cannot fix it. The three masks in the validation set corresponding to a tree species but with low heigh values may correspond to low resprouts after the 2003 fire.
+The qualitative errors support the same interpretation. Shadowed areas were occasionally detected as shrubs by both models, illustrating the difficulty of separating vegetation from spectrally similar image features using RGB information alone. Mask R-CNN additionally produced some straight mask boundaries aligned with inference-tile edges. Comparable artifacts were not evident in the SAM 3 output, potentially reflecting differences in the spatial representation of the two architectures and their response to overlapping inference windows. However, these boundary effects were secondary to the much larger problem of missing low shrubs.
 
-Higher overlap of the SAM 3 model could be one of the reason of the no presence of border effect between tiles.
+\subsection{Contribution and limitations of LiDAR refinement}
 
-All ground-classification algorithms placed the terrain surface above the GNSS reference: 25 of the 26 targets had a positive error for every method. This consistent positive bias suggests that low vegetation, such as herbaceous cover, small shrubs and litter, was partly kept in the ground class. Dense low vegetation can stop the laser before it reaches the soil, so the lowest available return marks the top of that layer rather than the ground surface. The more conservative filters reduced this effect. PMF had the smallest bias (\qty{0.356}{\metre}) and MCC and PTD \qty{40}{\degree}/\qty{3}{\metre} the largest (\qty{0.500}{\metre} and \qty{0.517}{\metre}), which matches their different tolerance for low objects close to the terrain. The largest single error (about \qty{2.6}{\metre} for every method) occurred at target 31, located at the center of a \textit{Q. ilex} crown. There the dense evergreen canopy blocked the laser from reaching the soil, so none of the algorithms could find reliable ground points beneath it. The interpolated DTM was then controlled by returns from the crown or its edges. Excluding this target lowers the RMSE to \qty{0.346}{\metre} for PMF, \qty{0.416}{\metre} for PTD \qty{30}{\degree}/\qty{2}{\metre}, \qty{0.530}{\metre} for MCC and \qty{0.618}{\metre} for PTD \qty{40}{\degree}/\qty{3}{\metre}, and the mean error to \qtyrange{0.267}{0.436}{\metre}. The ranking of the methods stays the same. Part of the remaining bias may also come from a systematic vertical offset between the GNSS and LiDAR height references, which this design cannot separate from the vegetation effect.
+LiDAR provided useful structural information for reducing one specific source of commission error: the classification of trees as shrubs. The selected CHM refinement reduced tree commission from \qty{28.6}{\percent} to \qty{4.8}{\percent} for Mask R-CNN and from \qty{61.9}{\percent} to \qty{14.3}{\percent} for SAM 3 without removing any of the shrub predictions that had been matched before refinement. At the map scale, it rejected a large proportion of the originally predicted area, particularly for SAM 3, showing that many RGB predictions corresponded to relatively tall vegetation rather than to the low shrub layer of interest.
 
-Picos et al. (2020), for example, used \qty{0.25}{\metre} for the ground–shrub division and 2 and \qty{3}{\metre} for shrub–stem separation in two UAV-LiDAR \textit{Eucalyptus} plantation plots. However, this work only serves as a justification of LiDAR refinement operation. The thresholds come from a different system, and is not a safe start here. The median valid cells per mask is 15 for shrubs and 96 for trees. That is still small for tiny \textit{L. stoechas} masks, but usable. Three trees are only \texttt{keep}. Ids 65 (\textit{Q. ilex}, \texttt{h\_p90} of 1.35), 60 (\textit{P. pinaster}, 1.44) and 44 (\textit{C. monogyna}, 1.37) have a \texttt{tall\_fraction} of 0. Their heights overlap \textit{C. laurifolius} (up to 1.46), so height alone cannot remove them. Trees 44 and 65 were also the trees still matched by predictions after the refinement of the deployed maps. These could be low resprouts after the 2003 fire. The models mostly predict taller vegetation and miss the low \textit{Lavandula}. That is a recall and domain problem, and CHM filtering cannot fix it.
+The conservative calibration strategy was important for this result. A threshold of \qty{1.7}{\metre} with a tall-cell fraction of 0.1 was selected because it removed a substantial proportion of tree masks without modifying any shrub reference mask. The leave-one-ROI-out analysis produced almost the same threshold and retained the absence of shrub modification, indicating that the rule was relatively stable within the available reference sample. By contrast, allowing shrub clipping during calibration favored lower height thresholds and caused an unseen shrub to be rejected in one held-out fold. Prioritizing shrub preservation was therefore appropriate for a refinement intended to remove obvious tree commission rather than to redefine shrub geometry.
 
-Precision rests on 1 to 8 scored predictions, so the values aren't reliable enough to rank the models. The Mask R-CNN precision of \qty{100}{\percent} after refinement rests on a single prediction that mainly covers a \textit{C. monogyna} tree and matches a \textit{L. stoechas} polygon with an IoU of only 0.107. Because shrub masks are not well predicted across all plots, the LiDAR refinement worked to remove the tree commission but not to improve the masks of the few well detected shrubs. The LiDAR is not proposed for the proposal of new shrub locations because the thresholds are validated with the annotations, so there is no way to assess the gains of this process without a bias.
+However, vegetation height alone could not completely separate the two growth forms. Several tree masks had P90 heights comparable to those of the tallest \textit{C. laurifolius} shrubs, and some of these low tree masks were also responsible for errors that remained after refinement. These individuals may represent low-stature trees or post-fire resprouts, for which growth form cannot be inferred reliably from a single CHM threshold. Increasing the strictness of the height filter would consequently remove additional trees only at the cost of beginning to modify genuine shrubs.
 
-Each model is deployed with its own checkpoint and its own confidence threshold, \qty{45}{\percent} for Mask R-CNN and \qty{60}{\percent} for SAM 3, and not with a single common value. The scores of the two architectures are not calibrated on the same scale, so a shared threshold would not make the comparison fairer. The consequence is that the deployment results reflect the operating point of each model as well as the architecture itself: a lower threshold keeps more low-confidence masks, which increases the number of predictions and the chance of a match at the cost of precision, and a higher one does the opposite.
+The accuracy of the CHM itself also constrains the refinement. All evaluated ground-classification methods showed a positive vertical bias relative to the GNSS measurements, with PMF producing the lowest RMSE and therefore being selected for normalization. The consistent positive residuals are compatible with the difficulty of identifying the true soil surface beneath dense low vegetation, litter, and tree crowns, where the lowest available LiDAR return may still occur above ground. This limitation was particularly evident beneath dense tree crowns. Although part of the residual difference could also reflect a systematic offset between the GNSS and LiDAR vertical references, the present design cannot separate these effects.
+
+The \qty{0.25}{\metre} CHM resolution provided a compromise between spatial detail and LiDAR-return density, but support remained limited for the smallest shrubs. Consequently, heights near ground level could not be used reliably to identify low shrubs. The CHM was therefore deliberately restricted to separating sufficiently tall vegetation from predicted shrubs rather than being used as an independent shrub detector. This distinction is important: LiDAR refinement can remove structurally implausible RGB predictions, but it cannot recover shrubs that were not detected by the segmentation model in the first place. Accordingly, LiDAR substantially reduced tree commission but produced only marginal changes in F1 because recall remained unchanged.
+
+\subsection{Implications for post-fire shrub mapping}
+
+Taken together, the results show that the principal bottleneck in this workflow is not post-processing but cross-domain shrub detection. Both deep-learning architectures performed well when evaluated on data representative of their training domain, and SAM 3 provided a modest but consistent improvement over Mask R-CNN within JuniperMapper. However, these advantages did not translate into reliable delineation of the structurally different post-fire shrub community at Encinacorba. The failure was particularly pronounced for small, low-stature shrubs, which cannot subsequently be recovered through height-based filtering.
+
+For applications requiring shrub mapping across heterogeneous Mediterranean environments, these findings argue against assuming that transfer learning from a single shrub morphology is sufficient. A more representative training dataset should include the range of species, crown sizes, vegetation densities, background conditions, and post-fire growth forms expected during deployment. Fine-tuning with locally annotated examples from the target ecosystem may therefore be more important than further adjustment of confidence or CHM thresholds. The strong contrast between performance on JuniperMapper and Encinacorba also emphasizes the importance of independent field validation: high performance on a held-out subset of the source dataset, or even on field-derived annotations from the same general domain, does not guarantee successful geographical and ecological transfer.
+
+Structural information nevertheless remains valuable as a complementary source. In this study, LiDAR effectively identified a large component of tree-related commission while preserving detected shrubs, demonstrating that RGB segmentation and CHM-based filtering address different error mechanisms. A future workflow could exploit LiDAR information more directly during model training or multimodal inference rather than only as a post-processing rule. Such integration may help distinguish woody growth forms that are spectrally similar in RGB imagery, although improved representation of low shrubs in the training data remains necessary.
+
+Finally, the independent validation sample was relatively small and plot based, and several accuracy estimates were derived from very few matched predictions. These values should therefore be interpreted primarily as evidence of poor cross-domain transfer rather than as precise estimates of landscape-scale accuracy or as a basis for ranking the two architectures. Broader field validation covering additional shrub communities, topographic conditions, and post-fire structures would be required to determine how general the observed transferability limitations are.
 
 \section{Conclusions}
 
-\begin{enumerate}
-\item The refinement is a tree-commission fix. It removes most masks that land on trees (tree commission down \qtyrange{77}{83}{\percent}) without losing any matched shrub, so it is safe to apply. Precision rises only because false positives are removed from a very small set of predictions, and F1 stays below \qty{10}{\percent} because recall does not change.  
-\item More CHM filtering won't help. Tightening the height rule would only start removing true shrubs (\textit{Cistus} and \textit{Crataegus} reach \qty{1.5}{\metre}), and the FPs mostly sit in the \qtyrange{0.3}{1.7}{\metre} band.  
-\item The bottleneck is the models. Recall of \qtyrange{1.7}{3.4}{\percent} means they hit 1 to 2 of the 58 annotated shrubs. \textbf{Check whether these are matching problems (IoU 0.10 is already lenient) or species/height mismatches}.  
-\item \textbf{Look and describe the remaining FPs}. Overlay the retained SAM 3 masks on the orthomosaic to see what they are. If many are real shrubs that were never digitized, the ground truth is the limit, not the model. Mask R-CNN's only hit is a matching artifact, and SAM 3's two hits are real \textit{C. laurifolius} crowns.
-\end{enumerate}
+This study evaluated the transferability of Mask R-CNN and SAM 3 for individual shrub mapping from very-high-resolution UAV RGB imagery and assessed whether UAV LiDAR-derived structural information could improve the resulting maps. The results demonstrate a clear contrast between performance within the source domain and performance under independent ecological transfer.
+
+Both architectures performed well on the JuniperMapper datasets, confirming that deep-learning models can accurately delineate shrubs when training and evaluation data represent similar vegetation structures. The reproduced Mask R-CNN achieved performance comparable to that reported in the original JuniperMapper study, while the domain-adapted SAM 3 model produced consistently higher F1-scores, particularly under the stricter IoU~=~0.75 criterion. SAM 3 therefore showed an advantage in individual crown delineation within the source domain.
+
+This advantage did not translate into successful mapping of the post-fire shrub community in Encinacorba. Both models recovered very few of the field-reference shrubs, with recall values of only \qty{1.7}{\percent} for Mask R-CNN and \qty{3.4}{\percent} for SAM 3. The dominant limitation was the failure to detect small and low-stature vegetation, particularly \textit{Lavandula stoechas}, rather than insufficient post-processing of otherwise correct predictions. The large decrease in performance indicates that transfer learning from shrubs with substantially different crown structures was insufficient to overcome the ecological and structural domain shift between JuniperMapper and the target Mediterranean post-fire environment.
+
+The LiDAR-based refinement successfully addressed a different component of the error. Using a conservatively calibrated CHM threshold substantially reduced the number of trees incorrectly classified as shrubs while preserving all previously matched shrub predictions. Tree commission decreased from \qty{28.6}{\percent} to \qty{4.8}{\percent} for Mask R-CNN and from \qty{61.9}{\percent} to \qty{14.3}{\percent} for SAM 3. However, because the refinement could only remove existing predictions and not detect missed shrubs, its effect on overall F1 was limited. Height information alone was also unable to distinguish some low-stature trees from the tallest shrubs because their structural distributions overlapped.
+
+The principal limitation of the proposed workflow is therefore the generalization of the RGB segmentation models rather than the LiDAR refinement stage. For operational mapping of heterogeneous Mediterranean shrublands, training data should represent the range of species, crown sizes, vegetation densities, and post-fire growth forms expected in the target landscape. Fine-tuning with locally annotated imagery is likely to provide greater benefits than further adjustment of confidence thresholds or CHM filtering rules.
+
+Overall, SAM 3 provided the strongest segmentation performance within the training domain, whereas UAV LiDAR proved useful for reducing tree-related commission errors after deployment. Their combination nevertheless remained constrained by poor detection of structurally dissimilar shrub vegetation. The study therefore highlights the importance of independent ecological validation and representative training data when transferring deep-learning vegetation-mapping models across landscapes.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
 
+% \appendix
 
-\section{Appendix I}
+% \section{Appendix}
 
-\begin{table}[ht]
-    \centering
-    \caption{
-        Comparison with Khaldi et al. (2024), Table 4 (F1, \unit{\percent}).
-    }
-    \label{tab:khaldi_comparison}
-    \begin{tabular}{llccc}
-        \toprule
-        Dataset & Metric & Khaldi et al. & Mask R-CNN (this study) & SAM 3 \\
-        \midrule
-        PI & IoU~=~0.50 & 84.84 & 84.8 / 82.7 & 88.5 \\
-        PI & S-IoU~=~0.50 & 87.87 & 88.6 / 86.3 & 91.1 \\
-        PI & IoU~=~0.75 & 73.95 & 72.3 / 72.0 & 80.5 \\
-        PI & S-IoU~=~0.75 & 84.77 & 85.0 / 83.3 & 87.6 \\
-        \midrule
-        FW & IoU~=~0.50 & 72.39 & 70.4 / 69.4 & 74.9 \\
-        FW & S-IoU~=~0.50 & 76.86 & 75.8 / 74.3 & 78.3 \\
-        FW & IoU~=~0.75 & 47.91 & 45.3 / 44.7 & 53.6 \\
-        FW & S-IoU~=~0.75 & 68.32 & 64.2 / 63.9 & 68.4 \\
-        \bottomrule
-    \end{tabular}
-\end{table}
+% \begin{table}[ht]
+%     \centering
+%     \caption{
+%         Comparison with \citealp{khaldi2024individual}, Table 4 (F1, \unit{\percent}).
+%     }
+%     \label{tab:khaldi_comparison}
+%     \begin{tabular}{llccc}
+%         \toprule
+%         Dataset & Metric & Khaldi et al. & Mask R-CNN (this study) & SAM 3 \\
+%         \midrule
+%         PI & IoU~=~0.50 & 84.84 & 84.8 & 88.5 \\
+%         PI & S-IoU~=~0.50 & 87.87 & 88.6 & 91.1 \\
+%         PI & IoU~=~0.75 & 73.95 & 72.3 & 80.5 \\
+%         PI & S-IoU~=~0.75 & 84.77 & 85.0 & 87.6 \\
+%         \midrule
+%         FW & IoU~=~0.50 & 72.39 & 70.4 & 74.9 \\
+%         FW & S-IoU~=~0.50 & 76.86 & 75.8 & 78.3 \\
+%         FW & IoU~=~0.75 & 47.91 & 45.3 & 53.6 \\
+%         FW & S-IoU~=~0.75 & 68.32 & 64.2 & 68.4 \\
+%         \bottomrule
+%     \end{tabular}
+% \end{table}
 
 \end{document}
