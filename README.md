@@ -2,7 +2,7 @@
 
 The current repo contains the code and workflow to reproduce the paper:
 
-> [TODO: Include name of the paper]
+> Transferability of Deep Learning Models for Post-Fire Shrub Mapping Using UAV RGB and LiDAR Data
 
 The study implements an instance segmentation-based approach to shrub delineation in burnt areas. The aim is perform a series of trainings over a small and controlled and previously burned area to assess how transfer learning and Deep Learning models can classify shrubs in a fire affected area.
 
